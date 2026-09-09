@@ -1,17 +1,15 @@
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
-const crypto = require('crypto');
 const https = require('https');
-const fs = require('fs');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Safe Memory + File Database Fallback for Vercel/Local
-let memoryDb = {
+// Global In-Memory Database for Vercel stability
+global.dbStore = global.dbStore || {
     wallets: [],
     holdings: [],
     trades: [],
@@ -20,32 +18,14 @@ let memoryDb = {
     admin_fees: 0
 };
 
-const filePath = path.join(__dirname, 'database.json');
-
 function getDbData() {
-    try {
-        if (fs.existsSync(filePath)) {
-            const data = fs.readFileSync(filePath, 'utf8');
-            return JSON.parse(data);
-        }
-    } catch (e) {
-        console.error('Read DB Error:', e);
-    }
-    return memoryDb;
+    return global.dbStore;
 }
 
 function saveDbData(data) {
-    memoryDb = data;
-    try {
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error('Write DB Error (Serverless mode):', e);
-    }
+    global.dbStore = data;
 }
 
-const BITGET_API_KEY = process.env.BITGET_API_KEY;
-const BITGET_SECRET_KEY = process.env.BITGET_SECRET_KEY;
-const BITGET_PASSPHRASE = process.env.BITGET_PASSPHRASE;
 const BITGET_BASE_URL = 'api.bitget.com';
 
 // Fetch Bitget markets
@@ -69,7 +49,6 @@ app.get('/api/bitget/markets', async (req, res) => {
 app.post('/api/user/init', (req, res) => {
     let { uid } = req.body;
     const dbData = getDbData();
-    if (!dbData.wallets) dbData.wallets = [];
 
     let wallet = null;
     if (uid) {
@@ -90,7 +69,6 @@ app.post('/api/user/init', (req, res) => {
 app.get('/api/user/portfolio/:uid', (req, res) => {
     const { uid } = req.params;
     const dbData = getDbData();
-    if (!dbData.wallets) dbData.wallets = [];
     
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) {
@@ -99,10 +77,10 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
         saveDbData(dbData);
     }
 
-    const holdings = (dbData.holdings || []).filter(h => h.uid === uid);
-    const trades = (dbData.trades || []).filter(t => t.uid === uid);
-    const deposits = (dbData.deposits || []).filter(d => d.uid === uid);
-    const withdrawals = (dbData.withdrawals || []).filter(w => w.uid === uid);
+    const holdings = dbData.holdings.filter(h => h.uid === uid);
+    const trades = dbData.trades.filter(t => t.uid === uid);
+    const deposits = dbData.deposits.filter(d => d.uid === uid);
+    const withdrawals = dbData.withdrawals.filter(w => w.uid === uid);
 
     const totalDeposited = deposits.filter(d => d.status === 'Approved').reduce((acc, d) => acc + d.amount, 0);
     const totalWithdrawn = withdrawals.filter(w => w.status === 'Approved').reduce((acc, w) => acc + w.amount, 0);
@@ -128,7 +106,6 @@ app.post('/api/trade/execute', async (req, res) => {
         }
 
         const dbData = getDbData();
-        if (!dbData.wallets) dbData.wallets = [];
         let wallet = dbData.wallets.find(w => w.uid === uid);
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
 
@@ -142,7 +119,6 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             wallet.usdt_balance -= tradeAmountUSDT;
             
-            if (!dbData.holdings) dbData.holdings = [];
             let holding = dbData.holdings.find(h => h.uid === uid && h.symbol === symbol);
             if (!holding) {
                 holding = { uid, symbol, amount: effectiveAmount, avg_price: price || 0 };
@@ -151,7 +127,6 @@ app.post('/api/trade/execute', async (req, res) => {
                 holding.amount += effectiveAmount;
             }
         } else {
-            if (!dbData.holdings) dbData.holdings = [];
             let holding = dbData.holdings.find(h => h.uid === uid && h.symbol === symbol);
             if (!holding || holding.amount < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient coin holding to sell!' });
@@ -160,7 +135,6 @@ app.post('/api/trade/execute', async (req, res) => {
             wallet.usdt_balance += effectiveAmount;
         }
 
-        if (!dbData.trades) dbData.trades = [];
         dbData.trades.push({
             id: 'TRD_' + Date.now(),
             uid,
@@ -172,10 +146,9 @@ app.post('/api/trade/execute', async (req, res) => {
             timestamp: new Date().toISOString()
         });
 
-        if (!dbData.admin_fees) dbData.admin_fees = 0;
         dbData.admin_fees += fee;
-
         saveDbData(dbData);
+
         return res.json({ success: true, message: `Trade executed! 2% fee ($${fee.toFixed(2)}) applied.` });
     } catch (e) {
         res.json({ success: false, message: 'Server error during trade' });
@@ -188,7 +161,6 @@ app.post('/api/deposit/request', (req, res) => {
     if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid amount' });
 
     const dbData = getDbData();
-    if (!dbData.deposits) dbData.deposits = [];
     dbData.deposits.push({
         id: 'DEP_' + Date.now(),
         uid,
@@ -208,15 +180,12 @@ app.post('/api/withdraw/request', (req, res) => {
     if (!uid || !amount || !address || amount <= 0) return res.json({ success: false, message: 'Invalid details' });
 
     const dbData = getDbData();
-    if (!dbData.wallets) dbData.wallets = [];
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet || wallet.usdt_balance < parseFloat(amount)) {
         return res.json({ success: false, message: 'Insufficient balance for withdrawal' });
     }
 
     wallet.usdt_balance -= parseFloat(amount);
-
-    if (!dbData.withdrawals) dbData.withdrawals = [];
     dbData.withdrawals.push({
         id: 'WDR_' + Date.now(),
         uid,
@@ -238,11 +207,11 @@ app.post('/api/admin/data', (req, res) => {
     const dbData = getDbData();
     res.json({ 
         success: true, 
-        deposits: dbData.deposits || [], 
-        withdrawals: dbData.withdrawals || [], 
-        trades: dbData.trades || [],
-        wallets: dbData.wallets || [],
-        admin_profit: dbData.admin_fees || 0 
+        deposits: dbData.deposits, 
+        withdrawals: dbData.withdrawals, 
+        trades: dbData.trades,
+        wallets: dbData.wallets,
+        admin_profit: dbData.admin_fees 
     });
 });
 
@@ -255,11 +224,10 @@ app.post('/api/admin/action', (req, res) => {
 
     const dbData = getDbData();
     if (type === 'deposit') {
-        const deposit = (dbData.deposits || []).find(d => d.id === id);
+        const deposit = dbData.deposits.find(d => d.id === id);
         if (!deposit) return res.json({ success: false, message: 'Not found' });
         deposit.status = status;
         if (status === 'Approved') {
-            if (!dbData.wallets) dbData.wallets = [];
             let wallet = dbData.wallets.find(w => w.uid === deposit.uid);
             if (!wallet) {
                 wallet = { uid: deposit.uid, usdt_balance: 0 };
@@ -272,7 +240,7 @@ app.post('/api/admin/action', (req, res) => {
     }
 
     if (type === 'withdrawal') {
-        const withdrawal = (dbData.withdrawals || []).find(w => w.id === id);
+        const withdrawal = dbData.withdrawals.find(w => w.id === id);
         if (!withdrawal) return res.json({ success: false, message: 'Not found' });
         withdrawal.status = status;
         if (status === 'Rejected') {
