@@ -8,6 +8,17 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toastNotification');
+    if (!toast) return;
+    toast.innerText = message;
+    toast.style.borderLeftColor = type === 'error' ? '#f6465d' : '#0ecb81';
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
 async function initUser() {
     try {
         const res = await fetch('/api/user/init', {
@@ -66,6 +77,7 @@ function selectSymbol(symbol) {
     selectedSymbol = symbol;
     document.getElementById('selectedPairHeader').innerText = symbol;
     document.getElementById('tradingPairTitle').innerText = symbol;
+    showToast(`Selected Market: ${symbol}`);
 }
 
 async function loadPortfolio() {
@@ -170,10 +182,10 @@ function setupEventListeners() {
         if (data.success) {
             document.getElementById('adminLoginBox').style.display = 'none';
             document.getElementById('adminDashboardContent').style.display = 'block';
-            document.getElementById('adminProfit').innerText = data.admin_profit.toFixed(4);
+            document.getElementById('adminProfit').innerText = (data.admin_profit || 0).toFixed(4);
             renderAdminRequests(data.deposits, data.withdrawals, password);
         } else {
-            alert(data.message || 'Incorrect Password');
+            showToast(data.message || 'Incorrect Password', 'error');
         }
     };
 
@@ -181,7 +193,7 @@ function setupEventListeners() {
         const amount = parseFloat(document.getElementById('depositAmount').value);
         const method = document.getElementById('depositMethod').value;
         const details = document.getElementById('depositDetails').value;
-        if (!amount || amount <= 0) return alert('Enter valid amount');
+        if (!amount || amount <= 0) return showToast('Enter valid amount', 'error');
 
         if (!currentUid) await initUser();
 
@@ -191,7 +203,7 @@ function setupEventListeners() {
             body: JSON.stringify({ uid: currentUid, method, amount, details })
         });
         const data = await res.json();
-        alert(data.message);
+        showToast(data.message);
         if (data.success) {
             depositModal.style.display = 'none';
             loadPortfolio();
@@ -201,7 +213,7 @@ function setupEventListeners() {
     document.getElementById('submitWithdraw').onclick = async () => {
         const amount = parseFloat(document.getElementById('withdrawAmount').value);
         const address = document.getElementById('withdrawAddress').value;
-        if (!amount || !address) return alert('Enter valid withdrawal details');
+        if (!amount || !address) return showToast('Enter valid withdrawal details', 'error');
 
         if (!currentUid) await initUser();
 
@@ -211,7 +223,7 @@ function setupEventListeners() {
             body: JSON.stringify({ uid: currentUid, address, amount })
         });
         const data = await res.json();
-        alert(data.message);
+        showToast(data.message);
         if (data.success) {
             withdrawModal.style.display = 'none';
             loadPortfolio();
@@ -229,7 +241,7 @@ async function executeTrade(side) {
     const price = type === 'Limit' ? parseFloat(document.getElementById('limitPrice').value) : 0;
 
     if (!amount || amount <= 0) {
-        alert('Please enter a valid amount');
+        showToast('Please enter a valid amount', 'error');
         return;
     }
 
@@ -240,12 +252,12 @@ async function executeTrade(side) {
             body: JSON.stringify({ uid: currentUid, symbol: selectedSymbol, side, type, price, amount })
         });
         const data = await res.json();
-        alert(data.message);
+        showToast(data.message, data.success ? 'success' : 'error');
         if (data.success) {
             loadPortfolio();
         }
     } catch (e) {
-        alert('Order execution failed');
+        showToast('Order execution failed', 'error');
     }
 }
 
@@ -287,7 +299,7 @@ async function handleAdminAction(type, id, status, password) {
         body: JSON.stringify({ password, type, id, status })
     });
     const data = await res.json();
-    alert(data.message);
+    showToast(data.message);
     if (data.success) {
         const adminRes = await fetch('/api/admin/data', {
             method: 'POST',
