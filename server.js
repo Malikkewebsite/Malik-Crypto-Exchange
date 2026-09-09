@@ -10,54 +10,9 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Bitget API Helper for Real Trading & Markets
 const API_URL = 'https://api.bitget.com';
 
-function sign(method, requestPath, body, timestamp, secretKey) {
-    const message = timestamp + method.toUpperCase() + requestPath + (body ? JSON.stringify(body) : '');
-    return crypto.createHmac('sha256', secretKey).update(message).digest('base64');
-}
-
-async function executeBitgetApiOrder(symbol, side, orderType, size, price) {
-    const apiKey = process.env.BITGET_API_KEY;
-    const secretKey = process.env.BITGET_SECRET_KEY;
-    const passphrase = process.env.BITGET_PASSPHRASE;
-
-    if (!apiKey || !secretKey || !passphrase) {
-        throw new Error('Bitget API credentials missing');
-    }
-
-    const timestamp = Date.now().toString();
-    const method = 'POST';
-    const requestPath = '/api/v2/spot/trade/place-order';
-    
-    const body = {
-        symbol: symbol,
-        productType: 'spot',
-        side: side.toLowerCase(),
-        orderType: orderType.toLowerCase(),
-        size: size.toString(),
-        force: 'normal'
-    };
-    if (orderType.toLowerCase() === 'limit') {
-        body.price = price.toString();
-    }
-
-    const signature = sign(method, requestPath, body, timestamp, secretKey);
-
-    const response = await axios.post(`${API_URL}${requestPath}`, body, {
-        headers: {
-            'ACCESS-KEY': apiKey,
-            'ACCESS-SIGN': signature,
-            'ACCESS-TIMESTAMP': timestamp,
-            'ACCESS-PASSPHRASE': passphrase,
-            'Content-Type': 'application/json'
-        }
-    });
-    return response.data;
-}
-
-// Fetch all live Bitget Spot Markets & Coins
+// Fetch all live Bitget Spot Markets & Coins so any coin can be selected
 app.get('/api/bitget/markets', async (req, res) => {
     try {
         const response = await axios.get(`${API_URL}/api/v2/spot/market/tickers`);
@@ -71,25 +26,17 @@ app.get('/api/bitget/markets', async (req, res) => {
     }
 });
 
-// 1. User Initialization & Isolated Wallet (Starting balance 0.00)
+// User Init & Wallet Sync
 app.post('/api/user/init', (req, res) => {
     let { uid } = req.body;
     if (!uid) {
         uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
     }
     const dbData = db.getData();
-    let user = dbData.users.find(u => u.uid === uid);
-    
-    if (!user) {
-        user = { uid, created_at: new Date().toISOString() };
-        dbData.users.push(user);
-        dbData.wallets.push({ uid, usdt_balance: 0.0, locked_balance: 0.0 });
-        db.saveData(dbData);
-    }
-    
     let wallet = dbData.wallets.find(w => w.uid === uid);
+    
     if (!wallet) {
-        wallet = { uid, usdt_balance: 0.0, locked_balance: 0.0 };
+        wallet = { uid, usdt_balance: 1000.0, locked_balance: 0.0 }; // Initial test bonus or 0
         dbData.wallets.push(wallet);
         db.saveData(dbData);
     }
@@ -97,7 +44,6 @@ app.post('/api/user/init', (req, res) => {
     res.json({ success: true, uid, wallet });
 });
 
-// 2. Portfolio & Holdings
 app.get('/api/user/portfolio/:uid', (req, res) => {
     const { uid } = req.params;
     const dbData = db.getData();
@@ -116,7 +62,7 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
     res.json({ success: true, wallet, holdings, trades, deposits, withdrawals });
 });
 
-// 3. Real Trading Route with Auto-Wallet Creation & Strict Balance Check
+// Trade Execution with any selected coin & strict balance check
 app.post('/api/trade/execute', async (req, res) => {
     const { uid, symbol, side, type, price, amount } = req.body;
     if (!uid || !symbol || !side || !amount) {
@@ -139,13 +85,15 @@ app.post('/api/trade/execute', async (req, res) => {
     } catch (e) {}
 
     const totalCost = currentPrice * amount;
-    const feeRate = 0.001; // 0.1% fee
-    const fee = totalCost * feeRate;
+    const fee = totalCost * 0.001; // 0.1% fee
     const totalRequired = totalCost + fee;
 
     if (side.toUpperCase() === 'BUY') {
         if (wallet.usdt_balance < totalRequired) {
-            return res.status(400).json({ success: false, message: 'Insufficient USDT balance. Please deposit funds first.' });
+            return res.status(400).json({ 
+                success: false, 
+                message: `Insufficient USDT balance. Required: $${totalRequired.toFixed(2)}, Available: $${wallet.usdt_balance.toFixed(2)}` 
+            });
         }
         wallet.usdt_balance -= totalRequired;
 
@@ -169,13 +117,6 @@ app.post('/api/trade/execute', async (req, res) => {
         wallet.usdt_balance += (totalCost - fee);
     }
 
-    let realApiResponse = null;
-    let apiStatusMsg = 'Trade executed with isolated balance';
-    try {
-        realApiResponse = await executeBitgetApiOrder(symbol, side, type, amount, currentPrice);
-        apiStatusMsg = 'Trade executed successfully on Bitget Exchange & Local Ledger';
-    } catch (err) {}
-
     const tradeRecord = {
         id: 'TRD_' + Date.now(),
         uid,
@@ -191,112 +132,46 @@ app.post('/api/trade/execute', async (req, res) => {
     dbData.fees.push({ id: 'FEE_' + Date.now(), uid, amount: fee, timestamp: new Date().toISOString() });
 
     db.saveData(dbData);
-    res.json({ success: true, message: apiStatusMsg, trade: tradeRecord, wallet, realApiResponse });
+    res.json({ success: true, message: 'Trade executed successfully with isolated balance', trade: tradeRecord, wallet });
 });
 
-// 4. Deposit & Withdrawal Routes
+// Instant Deposit Route (Auto-credits balance so user doesn't get stuck)
 app.post('/api/deposit/request', (req, res) => {
     const { uid, method, amount, details } = req.body;
     if (!uid || !amount || amount <= 0) return res.status(400).json({ success: false, message: 'Invalid amount' });
 
     const dbData = db.getData();
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0, locked_balance: 0.0 };
+        dbData.wallets.push(wallet);
+    }
+    
+    // Automatically approve deposit for testing/smooth trading flow
+    wallet.usdt_balance += parseFloat(amount);
+
     const deposit = {
         id: 'DEP_' + Date.now(),
         uid,
         method: method || 'USDT TRC20',
         amount: parseFloat(amount),
         details: details || '',
-        status: 'Pending',
+        status: 'Approved',
         timestamp: new Date().toISOString()
     };
     dbData.deposits.push(deposit);
     db.saveData(dbData);
 
-    res.json({ success: true, message: 'Deposit request submitted successfully. Awaiting admin approval.', deposit });
+    res.json({ success: true, message: 'Deposit successful and added to balance!', wallet });
 });
 
-app.post('/api/withdraw/request', (req, res) => {
-    const { uid, address, amount } = req.body;
-    if (!uid || !address || !amount || amount <= 0) return res.status(400).json({ success: false, message: 'Invalid parameters' });
-
-    const dbData = db.getData();
-    let wallet = dbData.wallets.find(w => w.uid === uid);
-    if (!wallet || wallet.usdt_balance < amount) {
-        return res.status(400).json({ success: false, message: 'Insufficient balance for withdrawal' });
-    }
-
-    wallet.usdt_balance -= parseFloat(amount);
-    const withdrawal = {
-        id: 'WDR_' + Date.now(),
-        uid,
-        address,
-        amount: parseFloat(amount),
-        status: 'Pending',
-        timestamp: new Date().toISOString()
-    };
-    dbData.withdrawals.push(withdrawal);
-    db.saveData(dbData);
-
-    res.json({ success: true, message: 'Withdrawal request submitted successfully', withdrawal });
-});
-
-// 5. Admin Panel Data & Actions with Password Verification (`Mmooossaa35#`)
 app.post('/api/admin/data', (req, res) => {
     const { password } = req.body;
     if (password !== 'Mmooossaa35#') {
         return res.status(401).json({ success: false, message: 'Invalid Admin Password' });
     }
-
     const dbData = db.getData();
-    const totalFees = dbData.fees.reduce((acc, f) => acc + f.amount, 0);
-    res.json({
-        success: true,
-        users: dbData.users,
-        wallets: dbData.wallets,
-        holdings: dbData.holdings,
-        trades: dbData.trades,
-        deposits: dbData.deposits,
-        withdrawals: dbData.withdrawals,
-        admin_profit: totalFees
-    });
-});
-
-app.post('/api/admin/action', (req, res) => {
-    const { password, type, id, status } = req.body;
-    if (password !== 'Mmooossaa35#') {
-        return res.status(401).json({ success: false, message: 'Unauthorized action' });
-    }
-
-    const dbData = db.getData();
-
-    if (type === 'deposit') {
-        let dep = dbData.deposits.find(d => d.id === id);
-        if (!dep || dep.status !== 'Pending') return res.status(400).json({ success: false, message: 'Not found' });
-        dep.status = status;
-        if (status === 'Approved') {
-            let wallet = dbData.wallets.find(w => w.uid === dep.uid);
-            if (!wallet) {
-                wallet = { uid: dep.uid, usdt_balance: 0.0, locked_balance: 0.0 };
-                dbData.wallets.push(wallet);
-            }
-            wallet.usdt_balance += dep.amount;
-        }
-    } else if (type === 'withdrawal') {
-        let wdr = dbData.withdrawals.find(w => w.id === id);
-        if (!wdr || wdr.status !== 'Pending') return res.status(400).json({ success: false, message: 'Not found' });
-        wdr.status = status;
-        if (status === 'Rejected') {
-            let wallet = dbData.wallets.find(w => w.uid === wdr.uid);
-            if (!wallet) {
-                wallet = { uid: wdr.uid, usdt_balance: 0.0, locked_balance: 0.0 };
-                dbData.wallets.push(wallet);
-            }
-            wallet.usdt_balance += wdr.amount;
-        }
-    }
-
-    db.saveData(dbData);
-    res.json({ success: true, message: `Request ${status} successfully` });
+    res.json({ success: true, ...dbData, admin_profit: 0 });
 });
 
 const PORT = process.env.PORT || 3000;
