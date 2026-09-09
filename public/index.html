@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Malik Crypto Exchange - Professional Trading</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navbar -->
+        <header class="navbar">
+            <div class="logo">⚡ Malik Crypto Exchange</div>
+            <div class="user-info">
+                <span>UID: <strong id="userUidDisplay">Loading...</strong></span>
+                <span>USDT Balance: <strong id="usdtBalance">0.00</strong></span>
+            </div>
+        </header>
+
+        <!-- Main Trading Interface -->
+        <div class="trading-grid">
+            <!-- Left & Center: Chart & Market Info -->
+            <div class="market-section">
+                <div class="market-header">
+                    <h2>BTCUSDT <span id="currentPrice" class="price-tag">0.00</span></h2>
+                </div>
+                <div class="chart-box">
+                    <iframe src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=D&theme=dark" width="100% " height="400px" frameborder="0"></iframe>
+                </div>
+            </div>
+
+            <!-- Right: Order Form -->
+            <div class="order-form-section">
+                <h3>Spot Trading</h3>
+                <div class="form-group">
+                    <label>Order Type</label>
+                    <select id="orderType">
+                        <option value="MARKET">Market</option>
+                        <option value="LIMIT">Limit</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Amount (BTC)</label>
+                    <input type="number" id="orderAmount" step="0.0001" placeholder="0.001">
+                </div>
+                <div class="button-group">
+                    <button class="btn-buy" onclick="placeOrder('BUY')">BUY / LONG</button>
+                    <button class="btn-sell" onclick="placeOrder('SELL')">SELL / SHORT</button>
+                </div>
+                <div id="orderMessage" class="msg"></div>
+            </div>
+        </div>
+
+        <!-- User Holdings & History Section -->
+        <div class="portfolio-section">
+            <h3>My Holdings</h3>
+            <table id="holdingsTable">
+                <thead>
+                    <tr><th>Symbol</th><th>Amount</th><th>Avg Price</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
