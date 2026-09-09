@@ -47,7 +47,6 @@ function renderMarkets(markets) {
     const container = document.getElementById('marketListContainer');
     if (!container) return;
 
-    // Filter only USDT pairs
     const usdtPairs = markets.filter(m => m.symbol.endsWith('USDT'));
     
     if (usdtPairs.length === 0) {
@@ -70,7 +69,10 @@ function selectSymbol(symbol) {
 }
 
 async function loadPortfolio() {
-    if (!currentUid) return;
+    if (!currentUid) {
+        await initUser();
+        return;
+    }
     try {
         const res = await fetch(`/api/user/portfolio/${currentUid}`);
         const data = await res.json();
@@ -116,7 +118,6 @@ async function loadPortfolio() {
 }
 
 function setupEventListeners() {
-    // Market search filter
     const searchInput = document.getElementById('marketSearch');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
@@ -126,7 +127,6 @@ function setupEventListeners() {
         });
     }
 
-    // Order Type toggle
     const orderTypeSelect = document.getElementById('orderType');
     if (orderTypeSelect) {
         orderTypeSelect.addEventListener('change', (e) => {
@@ -136,13 +136,11 @@ function setupEventListeners() {
         });
     }
 
-    // Buy / Sell execution
     const buyBtn = document.getElementById('buyBtn');
     const sellBtn = document.getElementById('sellBtn');
     if (buyBtn) buyBtn.addEventListener('click', () => executeTrade('BUY'));
     if (sellBtn) sellBtn.addEventListener('click', () => executeTrade('SELL'));
 
-    // Modals Popup Handling
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
     const adminModal = document.getElementById('adminModal');
@@ -161,7 +159,6 @@ function setupEventListeners() {
     };
     document.getElementById('closeAdmin').onclick = () => { adminModal.style.display = 'none'; };
 
-    // Admin Login with password `Mmooossaa35#`
     document.getElementById('adminLoginBtn').onclick = async () => {
         const password = document.getElementById('adminPasswordInput').value;
         const res = await fetch('/api/admin/data', {
@@ -180,12 +177,13 @@ function setupEventListeners() {
         }
     };
 
-    // Submit Deposit
     document.getElementById('submitDeposit').onclick = async () => {
         const amount = parseFloat(document.getElementById('depositAmount').value);
         const method = document.getElementById('depositMethod').value;
         const details = document.getElementById('depositDetails').value;
         if (!amount || amount <= 0) return alert('Enter valid amount');
+
+        if (!currentUid) await initUser();
 
         const res = await fetch('/api/deposit/request', {
             method: 'POST',
@@ -200,11 +198,12 @@ function setupEventListeners() {
         }
     };
 
-    // Submit Withdraw
     document.getElementById('submitWithdraw').onclick = async () => {
         const amount = parseFloat(document.getElementById('withdrawAmount').value);
         const address = document.getElementById('withdrawAddress').value;
         if (!amount || !address) return alert('Enter valid withdrawal details');
+
+        if (!currentUid) await initUser();
 
         const res = await fetch('/api/withdraw/request', {
             method: 'POST',
@@ -221,6 +220,10 @@ function setupEventListeners() {
 }
 
 async function executeTrade(side) {
+    if (!currentUid) {
+        await initUser();
+    }
+
     const type = document.getElementById('orderType').value;
     const amount = parseFloat(document.getElementById('tradeAmount').value);
     const price = type === 'Limit' ? parseFloat(document.getElementById('limitPrice').value) : 0;
@@ -286,7 +289,6 @@ async function handleAdminAction(type, id, status, password) {
     const data = await res.json();
     alert(data.message);
     if (data.success) {
-        // Refresh admin data
         const adminRes = await fetch('/api/admin/data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -297,4 +299,4 @@ async function handleAdminAction(type, id, status, password) {
             renderAdminRequests(adminData.deposits, adminData.withdrawals, password);
         }
     }
-        }
+}
