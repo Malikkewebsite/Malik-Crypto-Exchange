@@ -23,7 +23,7 @@ async function connectDB() {
     }
 }
 
-// Mongoose Schemas & Models
+// Schemas & Models
 const WalletSchema = new mongoose.Schema({ uid: String, usdt_balance: { type: Number, default: 0.0 } });
 const Wallet = mongoose.models.Wallet || mongoose.model('Wallet', WalletSchema);
 
@@ -42,12 +42,12 @@ const Withdrawal = mongoose.models.Withdrawal || mongoose.model('Withdrawal', Wi
 const ConfigSchema = new mongoose.Schema({ key: { type: String, unique: true }, value: Number });
 const Config = mongoose.models.Config || mongoose.model('Config', ConfigSchema);
 
-// Bitget API Credentials from your details
+// Bitget API Credentials
 const BITGET_API_KEY = process.env.BITGET_API_KEY || 'bg_c548d9fda732eceb14ee1b8607d63f8';
 const BITGET_SECRET_KEY = process.env.BITGET_SECRET_KEY || '78a0c22d32bce51efe378cfcc608a5f1007f007fe9d833758e93586464b5c600d855';
 const BITGET_PASSPHRASE = process.env.BITGET_PASSPHRASE || 'Mmooossaa35';
 
-// Helper function to sign and execute real Bitget API Trades
+// Real Bitget API Request Function
 function executeBitgetRealOrder(symbol, side, size) {
     return new Promise((resolve, reject) => {
         const timestamp = Date.now().toString();
@@ -55,16 +55,14 @@ function executeBitgetRealOrder(symbol, side, size) {
         const requestPath = '/api/v2/spot/trade/place-order';
         
         const bodyObj = {
-            symbol: symbol,
-            productType: 'USDT-FUTURES' || 'spot',
-            marginMode: 'crossed',
+            symbol: symbol.toUpperCase(),
+            productType: 'spot',
             side: side.toLowerCase() === 'buy' ? 'buy' : 'sell',
             orderType: 'market',
             size: size.toString()
         };
         const bodyString = JSON.stringify(bodyObj);
 
-        // Bitget Signature generation
         const preHash = timestamp + method + requestPath + bodyString;
         const signature = crypto.createHmac('sha256', BITGET_SECRET_KEY).update(preHash).digest('base64');
 
@@ -86,12 +84,7 @@ function executeBitgetRealOrder(symbol, side, size) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                try {
-                    const parsed = JSON.parse(data);
-                    resolve(parsed);
-                } catch (e) {
-                    reject(e);
-                }
+                try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
             });
         });
 
@@ -101,7 +94,7 @@ function executeBitgetRealOrder(symbol, side, size) {
     });
 }
 
-// Bitget Market Tickers
+// Bitget Markets
 app.get('/api/bitget/markets', async (req, res) => {
     const options = { hostname: 'api.bitget.com', port: 443, path: '/api/v2/spot/market/tickers', method: 'GET' };
     const externalReq = https.request(options, (apiRes) => {
@@ -118,11 +111,11 @@ app.get('/api/bitget/markets', async (req, res) => {
     externalReq.end();
 });
 
-// User Init & Portfolio APIs
 app.post('/api/user/init', async (req, res) => {
     try {
         await connectDB();
         let { uid, initial_balance } = req.body;
+        if (!uid || uid === 'null' || uid === 'undefined') uid = 'USER_' + Math.floor(100000 + Math.random() * 900000);
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) {
             wallet = new Wallet({ uid, usdt_balance: initial_balance || 100.0 });
@@ -154,7 +147,7 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
-// REAL TRADE EXECUTION (Local DB + Real Bitget API Trigger)
+// Real Trade Execution Route
 app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
@@ -169,7 +162,7 @@ app.post('/api/trade/execute', async (req, res) => {
         const effectiveAmount = tradeAmountUSDT - fee;
 
         if (side.toUpperCase() === 'BUY') {
-            if (wallet.usdt_balance < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient balance!' });
+            if (wallet.usdt_balance < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient USDT balance!' });
             wallet.usdt_balance -= tradeAmountUSDT;
             await wallet.save();
             
@@ -182,18 +175,18 @@ app.post('/api/trade/execute', async (req, res) => {
             await holding.save();
         } else {
             let holding = await Holding.findOne({ uid, symbol });
-            if (!holding || holding.amount < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient holdings to sell!' });
+            if (!holding || holding.amount < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient coin holding to sell!' });
             holding.amount -= tradeAmountUSDT;
             await holding.save();
             wallet.usdt_balance += effectiveAmount;
             await wallet.save();
         }
 
-        // Trigger Real Bitget API Order in background
+        // Hit Real Bitget Exchange via API in background
         executeBitgetRealOrder(symbol, side, effectiveAmount).then(bitgetRes => {
-            console.log('Bitget API Execution Response:', bitgetRes);
+            console.log('Bitget Live Order Executed:', bitgetRes);
         }).catch(err => {
-            console.error('Bitget API Background Execution Error:', err);
+            console.error('Bitget API Error:', err);
         });
 
         const newTrade = new Trade({
@@ -209,13 +202,12 @@ app.post('/api/trade/execute', async (req, res) => {
         }
         await adminConfig.save();
 
-        return res.json({ success: true, message: `Trade executed! Real Bitget order placed & 2% fee ($${fee.toFixed(2)}) applied.` });
+        return res.json({ success: true, message: `Trade executed successfully! Real Bitget order sent & 2% fee ($${fee.toFixed(2)}) applied.` });
     } catch (e) {
         res.status(500).json({ success: false, message: 'Server error during trade' });
     }
 });
 
-// Deposit & Withdrawal endpoints
 app.post('/api/deposit/request', async (req, res) => {
     try {
         await connectDB();
