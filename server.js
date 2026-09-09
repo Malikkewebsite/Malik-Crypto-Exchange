@@ -72,28 +72,34 @@ app.get('/api/bitget/markets', async (req, res) => {
     externalReq.end();
 });
 
-// User Init
+// Robust User Init to prevent balance reset
 app.post('/api/user/init', (req, res) => {
     let { uid } = req.body;
-    if (!uid) {
-        uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    }
     const dbData = db.getData();
     if (!dbData.wallets) dbData.wallets = [];
-    let wallet = dbData.wallets.find(w => w.uid === uid);
+
+    let wallet = null;
+    if (uid) {
+        wallet = dbData.wallets.find(w => w.uid === uid);
+    }
+
     if (!wallet) {
+        // Create new UID if not provided or not found in database
+        uid = uid || ('UID_' + Math.random().toString(36).substring(2, 10).toUpperCase());
         wallet = { uid, usdt_balance: 0.0 };
         dbData.wallets.push(wallet);
         db.saveData(dbData);
     }
+
     res.json({ success: true, uid, wallet });
 });
 
-// User Portfolio with Full Financial History & Profit/Loss Calculation
+// User Portfolio with Full Financial History & Safe Balance Retrieval
 app.get('/api/user/portfolio/:uid', (req, res) => {
     const { uid } = req.params;
     const dbData = db.getData();
     if (!dbData.wallets) dbData.wallets = [];
+    
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) {
         wallet = { uid, usdt_balance: 0.0 };
@@ -106,12 +112,8 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
     const deposits = (dbData.deposits || []).filter(d => d.uid === uid);
     const withdrawals = (dbData.withdrawals || []).filter(w => w.uid === uid);
 
-    // Calculate Financial Metrics (with 2% fee factored in)
     const totalDeposited = deposits.filter(d => d.status === 'Approved').reduce((acc, d) => acc + d.amount, 0);
     const totalWithdrawn = withdrawals.filter(w => w.status === 'Approved').reduce((acc, w) => acc + w.amount, 0);
-    const totalFeesPaid = trades.reduce((acc, t) => acc + (t.fee || 0), 0);
-    
-    // Net Profit / Loss = Current Wallet Balance + Total Withdrawn - Total Deposited
     const netProfitLoss = (wallet.usdt_balance + totalWithdrawn) - totalDeposited;
 
     res.json({ 
@@ -124,13 +126,12 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
         stats: {
             totalDeposited,
             totalWithdrawn,
-            totalFeesPaid,
             netProfitLoss
         }
     });
 });
 
-// Trade Execution with 2% Fee Cut on both Buy and Sell
+// Trade Execution with 2% Fee Cut
 app.post('/api/trade/execute', async (req, res) => {
     try {
         const { uid, symbol, side, type, price, amount } = req.body;
@@ -145,38 +146,36 @@ app.post('/api/trade/execute', async (req, res) => {
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
 
         const tradeAmountUSDT = parseFloat(amount);
-        const fee = tradeAmountUSDT * 0.02; // Exact 2% fee
+        const fee = tradeAmountUSDT * 0.02; // 2% fee
         const effectiveAmount = tradeAmountUSDT - fee;
 
         if (side.toUpperCase() === 'BUY') {
             if (wallet.usdt_balance < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient USDT balance including 2% fee!' });
             }
-            wallet.usdt_balance -= tradeAmountUSDT; // Deduct total amount + fee from wallet
+            wallet.usdt_balance -= tradeAmountUSDT;
+            
+            // Add to holdings
+            if (!dbData.holdings) dbData.holdings = [];
+            let holding = dbData.holdings.find(h => h.uid === uid && h.symbol === symbol);
+            if (!holding) {
+                holding = { uid, symbol, amount: effectiveAmount, avg_price: price || 0 };
+                dbData.holdings.push(holding);
+            } else {
+                holding.amount += effectiveAmount;
+            }
         } else {
-            // SELL logic
             if (!dbData.holdings) dbData.holdings = [];
             let holding = dbData.holdings.find(h => h.uid === uid && h.symbol === symbol);
             if (!holding || holding.amount < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient coin holding to sell!' });
             }
             holding.amount -= tradeAmountUSDT;
-            wallet.usdt_balance += effectiveAmount; // Add proceed after 2% fee cut
-        }
-
-        // Send to Bitget Live API if keys available
-        if (BITGET_API_KEY && BITGET_SECRET_KEY && BITGET_PASSPHRASE) {
-            try {
-                await makeBitgetPostRequest('/api/v2/spot/trade/place-order', {
-                    symbol, productType: 'spot', marginMode: 'isolated', marginCoin: 'USDT',
-                    side: side.toLowerCase(), orderType: type.toLowerCase() === 'market' ? 'market' : 'limit',
-                    size: effectiveAmount.toString()
-                });
-            } catch (err) { console.error('Bitget API notice:', err); }
+            wallet.usdt_balance += effectiveAmount;
         }
 
         if (!dbData.trades) dbData.trades = [];
-        const tradeRecord = {
+        dbData.trades.push({
             id: 'TRD_' + Date.now(),
             uid,
             symbol,
@@ -185,9 +184,8 @@ app.post('/api/trade/execute', async (req, res) => {
             amount: effectiveAmount,
             fee: fee,
             timestamp: new Date().toISOString()
-        };
+        });
 
-        dbData.trades.push(tradeRecord);
         if (!dbData.admin_fees) dbData.admin_fees = 0;
         dbData.admin_fees += fee;
 
@@ -232,7 +230,7 @@ app.post('/api/withdraw/request', (req, res) => {
         return res.json({ success: false, message: 'Insufficient balance for withdrawal' });
     }
 
-    wallet.usdt_balance -= parseFloat(amount); // Deduct immediately on request
+    wallet.usdt_balance -= parseFloat(amount);
 
     if (!dbData.withdrawals) dbData.withdrawals = [];
     dbData.withdrawals.push({
@@ -294,7 +292,6 @@ app.post('/api/admin/action', (req, res) => {
         if (!withdrawal) return res.json({ success: false, message: 'Not found' });
         withdrawal.status = status;
         if (status === 'Rejected') {
-            // Refund balance if rejected
             let wallet = dbData.wallets.find(w => w.uid === withdrawal.uid);
             if (wallet) wallet.usdt_balance += parseFloat(withdrawal.amount);
         }
