@@ -3,57 +3,50 @@ const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
-const db = require('./database/db');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Safe Memory + File Database Fallback for Vercel/Local
+let memoryDb = {
+    wallets: [],
+    holdings: [],
+    trades: [],
+    deposits: [],
+    withdrawals: [],
+    admin_fees: 0
+};
+
+const filePath = path.join(__dirname, 'database.json');
+
+function getDbData() {
+    try {
+        if (fs.existsSync(filePath)) {
+            const data = fs.readFileSync(filePath, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (e) {
+        console.error('Read DB Error:', e);
+    }
+    return memoryDb;
+}
+
+function saveDbData(data) {
+    memoryDb = data;
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error('Write DB Error (Serverless mode):', e);
+    }
+}
+
 const BITGET_API_KEY = process.env.BITGET_API_KEY;
 const BITGET_SECRET_KEY = process.env.BITGET_SECRET_KEY;
 const BITGET_PASSPHRASE = process.env.BITGET_PASSPHRASE;
 const BITGET_BASE_URL = 'api.bitget.com';
-
-function getBitgetSignature(timestamp, method, requestPath, bodyString = '') {
-    const what = timestamp + method.toUpperCase() + requestPath + bodyString;
-    return crypto.createHmac('sha256', BITGET_SECRET_KEY).update(what).digest('base64');
-}
-
-function makeBitgetPostRequest(endpoint, bodyData) {
-    return new Promise((resolve, reject) => {
-        const bodyString = JSON.stringify(bodyData);
-        const timestamp = Date.now().toString();
-        const signature = getBitgetSignature(timestamp, 'POST', endpoint, bodyString);
-
-        const options = {
-            hostname: BITGET_BASE_URL,
-            port: 443,
-            path: endpoint,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'ACCESS-KEY': BITGET_API_KEY,
-                'ACCESS-SIGN': signature,
-                'ACCESS-PASSPHRASE': BITGET_PASSPHRASE,
-                'ACCESS-TIMESTAMP': timestamp,
-                'locale': 'en_US'
-            }
-        };
-
-        const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
-            });
-        });
-
-        req.on('error', (error) => { reject(error); });
-        req.write(bodyString);
-        req.end();
-    });
-}
 
 // Fetch Bitget markets
 app.get('/api/bitget/markets', async (req, res) => {
@@ -72,10 +65,10 @@ app.get('/api/bitget/markets', async (req, res) => {
     externalReq.end();
 });
 
-// Robust User Init to prevent balance reset
+// User Init
 app.post('/api/user/init', (req, res) => {
     let { uid } = req.body;
-    const dbData = db.getData();
+    const dbData = getDbData();
     if (!dbData.wallets) dbData.wallets = [];
 
     let wallet = null;
@@ -84,27 +77,26 @@ app.post('/api/user/init', (req, res) => {
     }
 
     if (!wallet) {
-        // Create new UID if not provided or not found in database
         uid = uid || ('UID_' + Math.random().toString(36).substring(2, 10).toUpperCase());
         wallet = { uid, usdt_balance: 0.0 };
         dbData.wallets.push(wallet);
-        db.saveData(dbData);
+        saveDbData(dbData);
     }
 
     res.json({ success: true, uid, wallet });
 });
 
-// User Portfolio with Full Financial History & Safe Balance Retrieval
+// User Portfolio
 app.get('/api/user/portfolio/:uid', (req, res) => {
     const { uid } = req.params;
-    const dbData = db.getData();
+    const dbData = getDbData();
     if (!dbData.wallets) dbData.wallets = [];
     
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) {
         wallet = { uid, usdt_balance: 0.0 };
         dbData.wallets.push(wallet);
-        db.saveData(dbData);
+        saveDbData(dbData);
     }
 
     const holdings = (dbData.holdings || []).filter(h => h.uid === uid);
@@ -123,24 +115,19 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
         trades, 
         deposits, 
         withdrawals,
-        stats: {
-            totalDeposited,
-            totalWithdrawn,
-            netProfitLoss
-        }
+        stats: { totalDeposited, totalWithdrawn, netProfitLoss }
     });
 });
 
-// Trade Execution with 2% Fee Cut
+// Trade Execution with 2% Fee
 app.post('/api/trade/execute', async (req, res) => {
     try {
         const { uid, symbol, side, type, price, amount } = req.body;
-        
         if (!uid || !amount || amount <= 0) {
             return res.json({ success: false, message: 'Invalid trade parameters' });
         }
 
-        const dbData = db.getData();
+        const dbData = getDbData();
         if (!dbData.wallets) dbData.wallets = [];
         let wallet = dbData.wallets.find(w => w.uid === uid);
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
@@ -155,7 +142,6 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             wallet.usdt_balance -= tradeAmountUSDT;
             
-            // Add to holdings
             if (!dbData.holdings) dbData.holdings = [];
             let holding = dbData.holdings.find(h => h.uid === uid && h.symbol === symbol);
             if (!holding) {
@@ -189,12 +175,10 @@ app.post('/api/trade/execute', async (req, res) => {
         if (!dbData.admin_fees) dbData.admin_fees = 0;
         dbData.admin_fees += fee;
 
-        db.saveData(dbData);
-        return res.json({ success: true, message: `Trade executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
-
+        saveDbData(dbData);
+        return res.json({ success: true, message: `Trade executed! 2% fee ($${fee.toFixed(2)}) applied.` });
     } catch (e) {
-        console.error('Trade error:', e);
-        res.json({ success: false, message: 'Server error during trade execution' });
+        res.json({ success: false, message: 'Server error during trade' });
     }
 });
 
@@ -203,7 +187,7 @@ app.post('/api/deposit/request', (req, res) => {
     const { uid, method, amount, details } = req.body;
     if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid amount' });
 
-    const dbData = db.getData();
+    const dbData = getDbData();
     if (!dbData.deposits) dbData.deposits = [];
     dbData.deposits.push({
         id: 'DEP_' + Date.now(),
@@ -214,7 +198,7 @@ app.post('/api/deposit/request', (req, res) => {
         status: 'Pending',
         timestamp: new Date().toISOString()
     });
-    db.saveData(dbData);
+    saveDbData(dbData);
     res.json({ success: true, message: 'Deposit request submitted successfully!' });
 });
 
@@ -223,7 +207,7 @@ app.post('/api/withdraw/request', (req, res) => {
     const { uid, address, amount } = req.body;
     if (!uid || !amount || !address || amount <= 0) return res.json({ success: false, message: 'Invalid details' });
 
-    const dbData = db.getData();
+    const dbData = getDbData();
     if (!dbData.wallets) dbData.wallets = [];
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet || wallet.usdt_balance < parseFloat(amount)) {
@@ -241,7 +225,7 @@ app.post('/api/withdraw/request', (req, res) => {
         status: 'Pending',
         timestamp: new Date().toISOString()
     });
-    db.saveData(dbData);
+    saveDbData(dbData);
     res.json({ success: true, message: 'Withdrawal request submitted successfully!' });
 });
 
@@ -251,7 +235,7 @@ app.post('/api/admin/data', (req, res) => {
     if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35#')) {
         return res.json({ success: false, message: 'Invalid Password' });
     }
-    const dbData = db.getData();
+    const dbData = getDbData();
     res.json({ 
         success: true, 
         deposits: dbData.deposits || [], 
@@ -269,7 +253,7 @@ app.post('/api/admin/action', (req, res) => {
         return res.json({ success: false, message: 'Invalid Password' });
     }
 
-    const dbData = db.getData();
+    const dbData = getDbData();
     if (type === 'deposit') {
         const deposit = (dbData.deposits || []).find(d => d.id === id);
         if (!deposit) return res.json({ success: false, message: 'Not found' });
@@ -283,7 +267,7 @@ app.post('/api/admin/action', (req, res) => {
             }
             wallet.usdt_balance += parseFloat(deposit.amount);
         }
-        db.saveData(dbData);
+        saveDbData(dbData);
         return res.json({ success: true, message: `Deposit ${status}` });
     }
 
@@ -295,7 +279,7 @@ app.post('/api/admin/action', (req, res) => {
             let wallet = dbData.wallets.find(w => w.uid === withdrawal.uid);
             if (wallet) wallet.usdt_balance += parseFloat(withdrawal.amount);
         }
-        db.saveData(dbData);
+        saveDbData(dbData);
         return res.json({ success: true, message: `Withdrawal ${status}` });
     }
 
