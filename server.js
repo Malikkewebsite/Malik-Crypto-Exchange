@@ -45,24 +45,37 @@ app.get('/api/bitget/markets', async (req, res) => {
     externalReq.end();
 });
 
-// User Init
+// User Init with Backup Sync support
 app.post('/api/user/init', (req, res) => {
-    let { uid } = req.body;
+    let { uid, initial_balance } = req.body;
     const dbData = getDbData();
 
-    let wallet = null;
-    if (uid) {
-        wallet = dbData.wallets.find(w => w.uid === uid);
-    }
-
+    let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) {
-        uid = uid || ('UID_' + Math.random().toString(36).substring(2, 10).toUpperCase());
-        wallet = { uid, usdt_balance: 0.0 };
+        wallet = { uid, usdt_balance: initial_balance || 0.0 };
         dbData.wallets.push(wallet);
+        saveDbData(dbData);
+    } else if (wallet.usdt_balance === 0 && initial_balance > 0) {
+        wallet.usdt_balance = initial_balance;
         saveDbData(dbData);
     }
 
     res.json({ success: true, uid, wallet });
+});
+
+// User Sync Endpoint for LocalStorage Backup
+app.post('/api/user/sync', (req, res) => {
+    let { uid, balance } = req.body;
+    const dbData = getDbData();
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    if (wallet) {
+        wallet.usdt_balance = balance;
+        saveDbData(dbData);
+    } else {
+        dbData.wallets.push({ uid, usdt_balance: balance });
+        saveDbData(dbData);
+    }
+    res.json({ success: true });
 });
 
 // User Portfolio
