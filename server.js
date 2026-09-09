@@ -10,7 +10,7 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Bitget API Helper for Real Trading
+// Bitget API Helper for Real Trading & Markets
 const API_URL = 'https://api.bitget.com';
 
 function sign(method, requestPath, body, timestamp, secretKey) {
@@ -57,7 +57,21 @@ async function executeBitgetApiOrder(symbol, side, orderType, size, price) {
     return response.data;
 }
 
-// 1. User Initialization & Isolated Wallet
+// Fetch all live Bitget Spot Markets & Coins
+app.get('/api/bitget/markets', async (req, res) => {
+    try {
+        const response = await axios.get(`${API_URL}/api/v2/spot/market/tickers`);
+        if (response.data && response.data.data) {
+            res.json({ success: true, markets: response.data.data });
+        } else {
+            res.json({ success: false, markets: [] });
+        }
+    } catch (e) {
+        res.status(500).json({ success: false, message: 'Failed to fetch Bitget markets' });
+    }
+});
+
+// 1. User Initialization & Isolated Wallet (Starting balance 0.00)
 app.post('/api/user/init', (req, res) => {
     let { uid } = req.body;
     if (!uid) {
@@ -69,11 +83,11 @@ app.post('/api/user/init', (req, res) => {
     if (!user) {
         user = { uid, created_at: new Date().toISOString() };
         dbData.users.push(user);
-        dbData.wallets.push({ uid, usdt_balance: 1000.0, locked_balance: 0.0 });
+        dbData.wallets.push({ uid, usdt_balance: 0.0, locked_balance: 0.0 });
         db.saveData(dbData);
     }
     
-    let wallet = dbData.wallets.find(w => w.uid === uid) || { usdt_balance: 1000.0, locked_balance: 0.0 };
+    let wallet = dbData.wallets.find(w => w.uid === uid) || { usdt_balance: 0.0, locked_balance: 0.0 };
     res.json({ success: true, uid, wallet });
 });
 
@@ -101,9 +115,9 @@ app.post('/api/trade/execute', async (req, res) => {
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) return res.status(400).json({ success: false, message: 'Wallet not found' });
 
-    let currentPrice = price || 78950;
+    let currentPrice = price || 1;
     try {
-        const response = await axios.get(`https://api.bitget.com/api/v2/spot/market/tickers?symbol=${symbol}`);
+        const response = await axios.get(`${API_URL}/api/v2/spot/market/tickers?symbol=${symbol}`);
         if (response.data && response.data.data && response.data.data.length > 0) {
             currentPrice = parseFloat(response.data.data[0].lastPr);
         }
@@ -116,7 +130,7 @@ app.post('/api/trade/execute', async (req, res) => {
 
     if (side.toUpperCase() === 'BUY') {
         if (wallet.usdt_balance < totalRequired) {
-            return res.status(400).json({ success: false, message: 'Insufficient USDT balance in your isolated wallet' });
+            return res.status(400).json({ success: false, message: 'Insufficient USDT balance. Please deposit funds first.' });
         }
         wallet.usdt_balance -= totalRequired;
 
@@ -145,9 +159,7 @@ app.post('/api/trade/execute', async (req, res) => {
     try {
         realApiResponse = await executeBitgetApiOrder(symbol, side, type, amount, currentPrice);
         apiStatusMsg = 'Trade executed successfully on Bitget Exchange & Local Ledger';
-    } catch (err) {
-        // If API credentials are not set or exchange fails, local isolated trade remains successful
-    }
+    } catch (err) {}
 
     const tradeRecord = {
         id: 'TRD_' + Date.now(),
@@ -185,7 +197,7 @@ app.post('/api/deposit/request', (req, res) => {
     dbData.deposits.push(deposit);
     db.saveData(dbData);
 
-    res.json({ success: true, message: 'Deposit request submitted successfully', deposit });
+    res.json({ success: true, message: 'Deposit request submitted successfully. Awaiting admin approval.', deposit });
 });
 
 app.post('/api/withdraw/request', (req, res) => {
@@ -213,8 +225,13 @@ app.post('/api/withdraw/request', (req, res) => {
     res.json({ success: true, message: 'Withdrawal request submitted successfully', withdrawal });
 });
 
-// 5. Admin Panel Data & Actions
-app.get('/api/admin/data', (req, res) => {
+// 5. Admin Panel Data & Actions with Password Verification (`Mmooossaa35#`)
+app.post('/api/admin/data', (req, res) => {
+    const { password } = req.body;
+    if (password !== 'Mmooossaa35#') {
+        return res.status(401).json({ success: false, message: 'Invalid Admin Password' });
+    }
+
     const dbData = db.getData();
     const totalFees = dbData.fees.reduce((acc, f) => acc + f.amount, 0);
     res.json({
@@ -222,7 +239,6 @@ app.get('/api/admin/data', (req, res) => {
         users: dbData.users,
         wallets: dbData.wallets,
         holdings: dbData.holdings,
-        orders: dbData.orders,
         trades: dbData.trades,
         deposits: dbData.deposits,
         withdrawals: dbData.withdrawals,
@@ -231,7 +247,11 @@ app.get('/api/admin/data', (req, res) => {
 });
 
 app.post('/api/admin/action', (req, res) => {
-    const { type, id, status } = req.body;
+    const { password, type, id, status } = req.body;
+    if (password !== 'Mmooossaa35#') {
+        return res.status(401).json({ success: false, message: 'Unauthorized action' });
+    }
+
     const dbData = db.getData();
 
     if (type === 'deposit') {
