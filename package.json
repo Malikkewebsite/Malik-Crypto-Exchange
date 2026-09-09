@@ -1,21 +1,14 @@
 {
-  "name": "crypto-trading-platform",
+  "name": "malik-crypto-exchange",
   "version": "1.0.0",
-  "description": "Professional multi-user crypto trading platform with Bitget integration",
+  "description": "Real-time Crypto Trading Platform with MongoDB",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "axios": "^1.6.8"
-  },
-  "engines": {
-    "node": ">=18.x"
+    "express": "^4.19.2",
+    "mongoose": "^8.0.0"
   }
 }
