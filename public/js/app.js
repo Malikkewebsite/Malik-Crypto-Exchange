@@ -1,176 +1,197 @@
-let currentUid = localStorage.getItem('crypto_uid') || '';
-let selectedSymbol = 'BTCUSDT';
-let marketDataList = [];
-
 document.addEventListener('DOMContentLoaded', () => {
-    initUser();
-    fetchBitgetMarkets();
-    setupEventListeners();
-});
+    let currentPair = 'BTCUSDT';
+    let uid = localStorage.getItem('crypto_uid') || localStorage.getItem('uid');
+    if (!uid) {
+        uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        localStorage.setItem('crypto_uid', uid);
+        localStorage.setItem('uid', uid);
+    }
 
-function showToast(message, type = 'success') {
-    const toast = document.getElementById('toastNotification');
-    if (!toast) return;
-    toast.innerText = message;
-    toast.style.borderLeftColor = type === 'error' ? '#f6465d' : '#0ecb81';
-    toast.classList.add('show');
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 3000);
-}
-
-async function initUser() {
-    try {
-        const res = await fetch('/api/user/init', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: currentUid })
-        });
-        const data = await res.json();
+    // Initialize user session on server
+    fetch('/api/user/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid })
+    }).then(res => res.json()).then(data => {
         if (data.success) {
-            currentUid = data.uid;
-            localStorage.setItem('crypto_uid', currentUid);
-            const uidEl = document.getElementById('userUid');
-            const balEl = document.getElementById('userBalance');
-            if (uidEl) uidEl.innerText = `UID: ${currentUid}`;
-            if (balEl) balEl.innerText = `USDT Balance: ${data.wallet.usdt_balance.toFixed(2)}`;
-            loadPortfolio();
+            loadUserData();
         }
-    } catch (e) {
-        console.error('Initialization error', e);
-    }
-}
+    });
 
-async function fetchBitgetMarkets() {
-    try {
-        const res = await fetch('/api/bitget/markets');
-        const data = await res.json();
-        if (data.success && data.markets) {
-            marketDataList = data.markets;
-            renderMarkets(marketDataList);
+    // Fetch Bitget Markets
+    loadMarkets();
+    setInterval(loadMarkets, 10000); // Refresh markets every 10s
+
+    async function loadMarkets() {
+        try {
+            const res = await fetch('/api/bitget/markets');
+            const data = await res.json();
+            if (data.success && data.markets) {
+                const container = document.getElementById('marketListContainer');
+                const search = document.getElementById('marketSearch').value.toUpperCase();
+                
+                container.innerHTML = '';
+                data.markets.filter(m => m.symbol.includes(search)).forEach(m => {
+                    const div = document.createElement('div');
+                    div.style.cssText = 'display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #2b313a; cursor: pointer; font-size: 12px;';
+                    div.innerHTML = `<span><b>${m.symbol}</b></span> <span style="color: #0ecb81;">$${parseFloat(m.lastPr || 0).toFixed(4)}</span>`;
+                    div.onclick = () => {
+                        currentPair = m.symbol;
+                        document.getElementById('selectedPairHeader').innerText = currentPair;
+                        document.getElementById('tradingPairTitle').innerText = currentPair;
+                    };
+                    container.appendChild(div);
+                });
+            }
+        } catch (e) {
+            console.error('Market load error', e);
         }
-    } catch (e) {
-        console.error('Failed to fetch markets', e);
-    }
-}
-
-function renderMarkets(markets) {
-    const container = document.getElementById('marketListContainer');
-    if (!container) return;
-
-    const usdtPairs = markets.filter(m => m.symbol.endsWith('USDT'));
-    
-    if (usdtPairs.length === 0) {
-        container.innerHTML = `<div style="padding: 10px; text-align:center;">No markets found</div>`;
-        return;
     }
 
-    container.innerHTML = usdtPairs.map(m => `
-        <div class="market-item" onclick="selectSymbol('${m.symbol}')">
-            <span class="market-symbol">${m.symbol}</span>
-            <span class="market-price">${parseFloat(m.lastPr || 0).toFixed(4)}</span>
-        </div>
-    `).join('');
-}
+    document.getElementById('marketSearch').addEventListener('input', loadMarkets);
 
-function selectSymbol(symbol) {
-    selectedSymbol = symbol;
-    document.getElementById('selectedPairHeader').innerText = symbol;
-    document.getElementById('tradingPairTitle').innerText = symbol;
-    showToast(`Selected Market: ${symbol}`);
-}
-
-async function loadPortfolio() {
-    if (!currentUid) {
-        await initUser();
-        return;
-    }
-    try {
-        const res = await fetch(`/api/user/portfolio/${currentUid}`);
-        const data = await res.json();
-        if (data.success) {
-            const balEl = document.getElementById('userBalance');
-            if (balEl) balEl.innerText = `USDT Balance: ${data.wallet.usdt_balance.toFixed(2)}`;
-            
-            const holdingsBody = document.getElementById('holdingsTableBody');
-            if (holdingsBody) {
-                if (!data.holdings || data.holdings.length === 0) {
-                    holdingsBody.innerHTML = `<tr><td colspan="3">No holdings found</td></tr>`;
-                } else {
+    async function loadUserData() {
+        try {
+            const res = await fetch(`/api/user/portfolio/${uid}`);
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
+                
+                // Render Holdings
+                const holdingsBody = document.getElementById('holdingsTableBody');
+                if (data.holdings && data.holdings.length > 0) {
                     holdingsBody.innerHTML = data.holdings.map(h => `
                         <tr>
                             <td>${h.symbol}</td>
                             <td>${h.amount.toFixed(4)}</td>
-                            <td>${h.avg_buy_price.toFixed(2)}</td>
+                            <td>$${h.avg_price.toFixed(2)}</td>
                         </tr>
                     `).join('');
-                }
-            }
-
-            const tradesBody = document.getElementById('tradesTableBody');
-            if (tradesBody) {
-                if (!data.trades || data.trades.length === 0) {
-                    tradesBody.innerHTML = `<tr><td colspan="5">No trades found</td></tr>`;
                 } else {
-                    tradesBody.innerHTML = data.trades.slice(-5).reverse().map(t => `
+                    holdingsBody.innerHTML = `<tr><td colspan="3">No holdings found</td></tr>`;
+                }
+
+                // Render Trades
+                const tradesBody = document.getElementById('tradesTableBody');
+                if (data.trades && data.trades.length > 0) {
+                    tradesBody.innerHTML = data.trades.slice(-10).reverse().map(t => `
                         <tr>
                             <td>${t.id}</td>
-                            <td style="color:${t.side==='BUY'?'#0ecb81':'#f6465d'}">${t.side}</td>
-                            <td>${t.price.toFixed(2)}</td>
+                            <td style="color:${t.side === 'BUY' ? '#0ecb81' : '#f6465d'}">${t.side}</td>
+                            <td>$${t.price.toFixed(2)}</td>
                             <td>${t.amount.toFixed(4)}</td>
-                            <td>${t.fee.toFixed(4)}</td>
+                            <td>$${t.fee.toFixed(2)}</td>
                         </tr>
                     `).join('');
+                } else {
+                    tradesBody.innerHTML = `<tr><td colspan="5">No trades found</td></tr>`;
+                }
+
+                if (data.stats) {
+                    document.getElementById('userStatsSummary').innerHTML = `Total Deposited: $${data.stats.totalDeposited.toFixed(2)} | Withdrawn: $${data.stats.totalWithdrawn.toFixed(2)} | Net P&L: $${data.stats.netProfitLoss.toFixed(2)}`;
                 }
             }
+        } catch (e) {
+            console.error('User data error', e);
         }
-    } catch (e) {
-        console.error('Error loading portfolio', e);
-    }
-}
-
-function setupEventListeners() {
-    const searchInput = document.getElementById('marketSearch');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toUpperCase();
-            const filtered = marketDataList.filter(m => m.symbol.includes(query));
-            renderMarkets(filtered);
-        });
     }
 
-    const orderTypeSelect = document.getElementById('orderType');
-    if (orderTypeSelect) {
-        orderTypeSelect.addEventListener('change', (e) => {
-            const isLimit = e.target.value === 'Limit';
-            const limitGroup = document.getElementById('limitPriceGroup');
-            if (limitGroup) limitGroup.style.display = isLimit ? 'block' : 'none';
-        });
+    // Trade Execution (Buy/Sell)
+    async function executeTrade(side) {
+        const amount = parseFloat(document.getElementById('tradeAmount').value);
+        const orderType = document.getElementById('orderType').value;
+        const limitPrice = parseFloat(document.getElementById('limitPrice').value) || 0;
+
+        if (!amount || amount <= 0) {
+            alert('Please enter a valid amount');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/trade/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, symbol: currentPair, side, type: orderType, price: limitPrice, amount })
+            });
+            const result = await res.json();
+            alert(result.message);
+            if (result.success) {
+                document.getElementById('tradeAmount').value = '';
+                loadUserData();
+            }
+        } catch (e) {
+            console.error('Trade error', e);
+        }
     }
 
-    const buyBtn = document.getElementById('buyBtn');
-    const sellBtn = document.getElementById('sellBtn');
-    if (buyBtn) buyBtn.addEventListener('click', () => executeTrade('BUY'));
-    if (sellBtn) sellBtn.addEventListener('click', () => executeTrade('SELL'));
+    document.getElementById('buyBtn').onclick = () => executeTrade('BUY');
+    document.getElementById('sellBtn').onclick = () => executeTrade('SELL');
 
+    // Modals Handling
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
     const adminModal = document.getElementById('adminModal');
 
-    document.getElementById('depositBtn').onclick = () => { depositModal.style.display = 'flex'; };
-    document.getElementById('closeDeposit').onclick = () => { depositModal.style.display = 'none'; };
+    document.getElementById('depositBtn').onclick = () => depositModal.style.display = 'flex';
+    document.getElementById('closeDeposit').onclick = () => depositModal.style.display = 'none';
 
-    document.getElementById('withdrawBtn').onclick = () => { withdrawModal.style.display = 'flex'; };
-    document.getElementById('closeWithdraw').onclick = () => { withdrawModal.style.display = 'none'; };
+    document.getElementById('withdrawBtn').onclick = () => withdrawModal.style.display = 'flex';
+    document.getElementById('closeWithdraw').onclick = () => withdrawModal.style.display = 'none';
 
-    document.getElementById('adminBtn').onclick = () => {
-        adminModal.style.display = 'flex';
-        document.getElementById('adminLoginBox').style.display = 'block';
-        document.getElementById('adminDashboardContent').style.display = 'none';
-        document.getElementById('adminPasswordInput').value = '';
+    document.getElementById('adminBtn').onclick = () => adminModal.style.display = 'flex';
+    document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
+
+    // Submit Deposit Request
+    document.getElementById('submitDeposit').onclick = async () => {
+        const method = document.getElementById('depositMethod').value;
+        const amount = parseFloat(document.getElementById('depositAmount').value);
+        const details = document.getElementById('depositDetails').value;
+
+        if (!amount || amount <= 0) {
+            alert('Enter valid deposit amount');
+            return;
+        }
+
+        const res = await fetch('/api/deposit/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid, method, amount, details })
+        });
+        const r = await res.json();
+        alert(r.message);
+        if (r.success) {
+            depositModal.style.display = 'none';
+            document.getElementById('depositAmount').value = '';
+            document.getElementById('depositDetails').value = '';
+        }
     };
-    document.getElementById('closeAdmin').onclick = () => { adminModal.style.display = 'none'; };
 
+    // Submit Withdraw Request
+    document.getElementById('submitWithdraw').onclick = async () => {
+        const address = document.getElementById('withdrawAddress').value;
+        const amount = parseFloat(document.getElementById('withdrawAmount').value);
+
+        if (!address || !amount || amount <= 0) {
+            alert('Enter valid withdrawal details');
+            return;
+        }
+
+        const res = await fetch('/api/withdraw/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid, address, amount })
+        });
+        const r = await res.json();
+        alert(r.message);
+        if (r.success) {
+            withdrawModal.style.display = 'none';
+            document.getElementById('withdrawAddress').value = '';
+            document.getElementById('withdrawAmount').value = '';
+            loadUserData();
+        }
+    };
+
+    // Admin Login & Management
     document.getElementById('adminLoginBtn').onclick = async () => {
         const password = document.getElementById('adminPasswordInput').value;
         const res = await fetch('/api/admin/data', {
@@ -182,133 +203,47 @@ function setupEventListeners() {
         if (data.success) {
             document.getElementById('adminLoginBox').style.display = 'none';
             document.getElementById('adminDashboardContent').style.display = 'block';
-            document.getElementById('adminProfit').innerText = (data.admin_profit || 0).toFixed(4);
-            renderAdminRequests(data.deposits, data.withdrawals, password);
+            document.getElementById('adminProfit').innerText = data.admin_profit.toFixed(2);
+
+            const tbody = document.getElementById('adminRequestsBody');
+            let allReqs = [];
+            data.deposits.forEach(d => allReqs.push({ ...d, reqType: 'deposit' }));
+            data.withdrawals.forEach(w => allReqs.push({ ...w, reqType: 'withdrawal' }));
+
+            if (allReqs.length > 0) {
+                tbody.innerHTML = allReqs.map(r => `
+                    <tr>
+                        <td>${r.reqType.toUpperCase()}</td>
+                        <td>${r.uid}</td>
+                        <td>$${r.amount}</td>
+                        <td>${r.details || r.address || '-'}</td>
+                        <td><b>${r.status}</b></td>
+                        <td>
+                            ${r.status === 'Pending' ? `
+                                <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Approved', '${password}')" style="background:#0ecb81; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Approve</button>
+                                <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Rejected', '${password}')" style="background:#f6465d; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Reject</button>
+                            ` : r.status}
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = `<tr><td colspan="6">No requests found</td></tr>`;
+            }
         } else {
-            showToast(data.message || 'Incorrect Password', 'error');
+            alert(data.message);
         }
     };
+});
 
-    document.getElementById('submitDeposit').onclick = async () => {
-        const amount = parseFloat(document.getElementById('depositAmount').value);
-        const method = document.getElementById('depositMethod').value;
-        const details = document.getElementById('depositDetails').value;
-        if (!amount || amount <= 0) return showToast('Enter valid amount', 'error');
-
-        if (!currentUid) await initUser();
-
-        const res = await fetch('/api/deposit/request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: currentUid, method, amount, details })
-        });
-        const data = await res.json();
-        showToast(data.message);
-        if (data.success) {
-            depositModal.style.display = 'none';
-            loadPortfolio();
-        }
-    };
-
-    document.getElementById('submitWithdraw').onclick = async () => {
-        const amount = parseFloat(document.getElementById('withdrawAmount').value);
-        const address = document.getElementById('withdrawAddress').value;
-        if (!amount || !address) return showToast('Enter valid withdrawal details', 'error');
-
-        if (!currentUid) await initUser();
-
-        const res = await fetch('/api/withdraw/request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: currentUid, address, amount })
-        });
-        const data = await res.json();
-        showToast(data.message);
-        if (data.success) {
-            withdrawModal.style.display = 'none';
-            loadPortfolio();
-        }
-    };
-}
-
-async function executeTrade(side) {
-    if (!currentUid) {
-        await initUser();
-    }
-
-    const type = document.getElementById('orderType').value;
-    const amount = parseFloat(document.getElementById('tradeAmount').value);
-    const price = type === 'Limit' ? parseFloat(document.getElementById('limitPrice').value) : 0;
-
-    if (!amount || amount <= 0) {
-        showToast('Please enter a valid amount', 'error');
-        return;
-    }
-
-    try {
-        const res = await fetch('/api/trade/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid: currentUid, symbol: selectedSymbol, side, type, price, amount })
-        });
-        const data = await res.json();
-        showToast(data.message, data.success ? 'success' : 'error');
-        if (data.success) {
-            loadPortfolio();
-        }
-    } catch (e) {
-        showToast('Order execution failed', 'error');
-    }
-}
-
-function renderAdminRequests(deposits, withdrawals, password) {
-    let allRequests = [
-        ...(deposits || []).map(d => ({ ...d, reqType: 'deposit' })),
-        ...(withdrawals || []).map(w => ({ ...w, reqType: 'withdrawal', details: w.address }))
-    ];
-
-    const tbody = document.getElementById('adminRequestsBody');
-    if (!tbody) return;
-
-    if (allRequests.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6">No pending or past requests</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = allRequests.reverse().map(r => `
-        <tr>
-            <td>${r.reqType.toUpperCase()}</td>
-            <td>${r.uid}</td>
-            <td>$${r.amount}</td>
-            <td>${r.details || '-'}</td>
-            <td><b>${r.status}</b></td>
-            <td>
-                ${r.status === 'Pending' ? `
-                    <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Approved', '${password}')" style="background:#0ecb81; border:none; padding:4px 8px; color:#000; border-radius:3px; cursor:pointer;">Approve</button>
-                    <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Rejected', '${password}')" style="background:#f6465d; border:none; padding:4px 8px; color:#fff; border-radius:3px; cursor:pointer;">Reject</button>
-                ` : r.status}
-            </td>
-        </tr>
-    `).join('');
-}
-
-async function handleAdminAction(type, id, status, password) {
+window.handleAdminAction = async function(type, id, status, password) {
     const res = await fetch('/api/admin/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password, type, id, status })
     });
-    const data = await res.json();
-    showToast(data.message);
-    if (data.success) {
-        const adminRes = await fetch('/api/admin/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
-        });
-        const adminData = await adminRes.json();
-        if (adminData.success) {
-            renderAdminRequests(adminData.deposits, adminData.withdrawals, password);
-        }
+    const r = await res.json();
+    alert(r.message);
+    if (r.success) {
+        document.getElementById('adminBtn').click(); // Refresh admin panel
     }
-}
+};
