@@ -1,67 +1,36 @@
 const fs = require('fs');
 const path = require('path');
 
-const dataDir = path.join('/tmp', 'crypto_data');
-if (!fs.existsSync(dataDir)) {
-    try {
-        fs.mkdirSync(dataDir, { recursive: true });
-    } catch (e) {}
+const filePath = path.join(__dirname, 'database.json');
+
+// Ensure database file exists
+if (!fs.existsSync(filePath)) {
+    const initialData = {
+        wallets: [],
+        holdings: [],
+        trades: [],
+        deposits: [],
+        withdrawals: [],
+        admin_fees: 0
+    };
+    fs.writeFileSync(filePath, JSON.stringify(initialData, null, 2));
 }
 
-const dbFile = path.join(dataDir, 'database.json');
-
-function readDB() {
+function getData() {
     try {
-        if (!fs.existsSync(dbFile)) {
-            const initialData = {
-                users: [],
-                wallets: [],
-                holdings: [],
-                orders: [],
-                trades: [],
-                deposits: [],
-                withdrawals: [],
-                transactions: [],
-                fees: [],
-                admin_settings: { usdt_address: 'TRC20_DEFAULT_ADDRESS_HERE', easypaisa_number: '03001234567' },
-                audit_logs: []
-            };
-            fs.writeFileSync(dbFile, JSON.stringify(initialData, null, 2));
-            return initialData;
-        }
-        const data = fs.readFileSync(dbFile, 'utf8');
+        const data = fs.readFileSync(filePath, 'utf8');
         return JSON.parse(data);
-    } catch (err) {
-        return {
-            users: [], wallets: [], holdings: [], orders: [], trades: [],
-            deposits: [], withdrawals: [], transactions: [], fees: [],
-            admin_settings: {}, audit_logs: []
-        };
+    } catch (e) {
+        return { wallets: [], holdings: [], trades: [], deposits: [], withdrawals: [], admin_fees: 0 };
     }
 }
 
-function writeDB(data) {
+function saveData(data) {
     try {
-        fs.writeFileSync(dbFile, JSON.stringify(data, null, 2));
-    } catch (err) {}
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error('Error saving database:', e);
+    }
 }
 
-const db = {
-    getData() { return readDB(); },
-    saveData(data) { writeDB(data); },
-    
-    // Helper to log admin/user actions
-    logAudit(uid, action, details) {
-        const dbData = readDB();
-        dbData.audit_logs.push({
-            id: Date.now(),
-            uid,
-            action,
-            details,
-            timestamp: new Date().toISOString()
-        });
-        writeDB(dbData);
-    }
-};
-
-module.exports = db;
+module.exports = { getData, saveData };
