@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     let currentPair = 'BTCUSDT';
+    
+    // Persistent UID and Local Balance Backup for Vercel Serverless
     let uid = localStorage.getItem('crypto_uid') || localStorage.getItem('uid');
     if (!uid) {
         uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -7,11 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('uid', uid);
     }
 
-    // Initialize user session on server
+    let localBalance = parseFloat(localStorage.getItem('crypto_balance') || '0');
+
+    // Initialize user session on server with local backup sync
     fetch('/api/user/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid })
+        body: JSON.stringify({ uid, initial_balance: localBalance })
     }).then(res => res.json()).then(data => {
         if (data.success) {
             loadUserData();
@@ -56,6 +60,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`/api/user/portfolio/${uid}`);
             const data = await res.json();
             if (data.success) {
+                // If server returns 0 but we have local backup, sync it back
+                if (data.wallet.usdt_balance === 0 && localBalance > 0) {
+                    await fetch('/api/user/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ uid, balance: localBalance })
+                    });
+                    data.wallet.usdt_balance = localBalance;
+                } else {
+                    localBalance = data.wallet.usdt_balance;
+                    localStorage.setItem('crypto_balance', localBalance);
+                }
+
                 document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
@@ -152,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = `Hello Admin, I want to request a withdrawal.\nMy User ID: ${uid}\n${balanceText}`;
         const encodedMsg = encodeURIComponent(message);
         
-        // Find WhatsApp anchor tag inside withdraw modal and update href
         const waLink = withdrawModal.querySelector('a[href*="wa.me"]');
         if(waLink) {
             waLink.href = `https://wa.me/923125124424?text=${encodedMsg}`;
