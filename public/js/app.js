@@ -26,6 +26,7 @@ async function initUser() {
 }
 
 async function loadPortfolio() {
+    if (!currentUid) return;
     try {
         const res = await fetch(`/api/user/portfolio/${currentUid}`);
         const data = await res.json();
@@ -34,7 +35,7 @@ async function loadPortfolio() {
             
             // Render Holdings
             const holdingsBody = document.getElementById('holdingsTableBody');
-            if (data.holdings.length === 0) {
+            if (!data.holdings || data.holdings.length === 0) {
                 holdingsBody.innerHTML = `<tr><td colspan="3">No holdings found</td></tr>`;
             } else {
                 holdingsBody.innerHTML = data.holdings.map(h => `
@@ -48,7 +49,7 @@ async function loadPortfolio() {
 
             // Render Trades
             const tradesBody = document.getElementById('tradesTableBody');
-            if (data.trades.length === 0) {
+            if (!data.trades || data.trades.length === 0) {
                 tradesBody.innerHTML = `<tr><td colspan="5">No trades found</td></tr>`;
             } else {
                 tradesBody.innerHTML = data.trades.slice(-5).reverse().map(t => `
@@ -69,31 +70,41 @@ async function loadPortfolio() {
 
 function setupEventListeners() {
     // Order Type toggle
-    document.getElementById('orderType').addEventListener('change', (e) => {
-        const isLimit = e.target.value === 'Limit';
-        document.getElementById('limitPriceGroup').style.display = isLimit ? 'block' : 'none';
-    });
+    const orderTypeSelect = document.getElementById('orderType');
+    if (orderTypeSelect) {
+        orderTypeSelect.addEventListener('change', (e) => {
+            const isLimit = e.target.value === 'Limit';
+            document.getElementById('limitPriceGroup').style.display = isLimit ? 'block' : 'none';
+        });
+    }
 
     // Buy / Sell execution
     document.getElementById('buyBtn').addEventListener('click', () => executeTrade('BUY'));
     document.getElementById('sellBtn').addEventListener('click', () => executeTrade('SELL'));
 
-    // Modals
+    // Modals Handling
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
     const adminModal = document.getElementById('adminModal');
 
-    document.getElementById('depositBtn').onclick = () => depositModal.style.display = 'block';
-    document.getElementById('closeDeposit').onclick = () => depositModal.style.display = 'none';
+    document.getElementById('depositBtn').onclick = () => { depositModal.style.display = 'block'; };
+    document.getElementById('closeDeposit').onclick = () => { depositModal.style.display = 'none'; };
 
-    document.getElementById('withdrawBtn').onclick = () => withdrawModal.style.display = 'block';
-    document.getElementById('closeWithdraw').onclick = () => withdrawModal.style.display = 'none';
+    document.getElementById('withdrawBtn').onclick = () => { withdrawModal.style.display = 'block'; };
+    document.getElementById('closeWithdraw').onclick = () => { withdrawModal.style.display = 'none'; };
 
     document.getElementById('adminBtn').onclick = () => {
         adminModal.style.display = 'block';
         loadAdminData();
     };
-    document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
+    document.getElementById('closeAdmin').onclick = () => { adminModal.style.display = 'none'; };
+
+    // Close modal on outside click
+    window.onclick = (event) => {
+        if (event.target === depositModal) depositModal.style.display = 'none';
+        if (event.target === withdrawModal) withdrawModal.style.display = 'none';
+        if (event.target === adminModal) adminModal.style.display = 'none';
+    };
 
     // Submit Deposit
     document.getElementById('submitDeposit').onclick = async () => {
@@ -138,7 +149,7 @@ function setupEventListeners() {
 async function executeTrade(side) {
     const type = document.getElementById('orderType').value;
     const amount = parseFloat(document.getElementById('tradeAmount').value);
-    const price = type === 'Limit' ? parseFloat(document.getElementById('limitPrice').value) : 78950; // fallback live price
+    const price = type === 'Limit' ? parseFloat(document.getElementById('limitPrice').value) : 78950;
 
     if (!amount || amount <= 0) {
         alert('Please enter a valid amount');
@@ -169,8 +180,8 @@ async function loadAdminData() {
             document.getElementById('adminProfit').innerText = data.admin_profit.toFixed(4);
             
             let allRequests = [
-                ...data.deposits.map(d => ({ ...d, reqType: 'deposit' })),
-                ...data.withdrawals.map(w => ({ ...w, reqType: 'withdrawal', details: w.address }))
+                ...(data.deposits || []).map(d => ({ ...d, reqType: 'deposit' })),
+                ...(data.withdrawals || []).map(w => ({ ...w, reqType: 'withdrawal', details: w.address }))
             ];
 
             const tbody = document.getElementById('adminRequestsBody');
@@ -210,4 +221,4 @@ async function handleAdminAction(type, id, status) {
     if (data.success) {
         loadAdminData();
     }
-                }
+}
