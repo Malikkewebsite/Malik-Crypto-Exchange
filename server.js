@@ -118,11 +118,27 @@ app.post('/api/user/init', async (req, res) => {
         if (!uid || uid === 'null' || uid === 'undefined') uid = 'USER_' + Math.floor(100000 + Math.random() * 900000);
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) {
-            wallet = new Wallet({ uid, usdt_balance: initial_balance || 100.0 });
+            wallet = new Wallet({ uid, usdt_balance: initial_balance || 0.0 });
             await wallet.save();
         }
         res.json({ success: true, uid, wallet });
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
+});
+
+app.post('/api/user/sync', async (req, res) => {
+    try {
+        await connectDB();
+        const { uid, balance } = req.body;
+        if (!uid) return res.json({ success: false });
+        let wallet = await Wallet.findOne({ uid });
+        if (!wallet) {
+            wallet = new Wallet({ uid, usdt_balance: balance || 0 });
+        } else if (wallet.usdt_balance === 0 && balance > 0) {
+            wallet.usdt_balance = balance;
+        }
+        await wallet.save();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
 app.get('/api/user/portfolio/:uid', async (req, res) => {
@@ -131,7 +147,7 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
         const { uid } = req.params;
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) {
-            wallet = new Wallet({ uid, usdt_balance: 100.0 });
+            wallet = new Wallet({ uid, usdt_balance: 0.0 });
             await wallet.save();
         }
         const holdings = await Holding.find({ uid });
@@ -246,68 +262,50 @@ app.post('/api/admin/data', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
-// Admin Approve/Reject Deposit Route
-app.post('/api/admin/deposit/action', async (req, res) => {
+// Admin Unified Action Route (Matching frontend handleAdminAction)
+app.post('/api/admin/action', async (req, res) => {
     try {
         await connectDB();
-        const { id, action, password } = req.body;
+        const { password, type, id, status } = req.body;
+        
         if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
             return res.json({ success: false, message: 'Invalid Password' });
         }
 
-        const deposit = await Deposit.findOne({ id });
-        if (!deposit) return res.json({ success: false, message: 'Deposit request not found' });
-        if (deposit.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+        if (type === 'deposit') {
+            const deposit = await Deposit.findOne({ id });
+            if (!deposit) return res.json({ success: false, message: 'Deposit request not found' });
+            if (deposit.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
 
-        if (action === 'Approve') {
-            deposit.status = 'Approved';
+            deposit.status = status;
             await deposit.save();
 
-            let wallet = await Wallet.findOne({ uid: deposit.uid });
-            if (!wallet) {
-                wallet = new Wallet({ uid: deposit.uid, usdt_balance: 0 });
-            }
-            wallet.usdt_balance += deposit.amount;
-            await wallet.save();
-        } else {
-            deposit.status = 'Rejected';
-            await deposit.save();
-        }
-
-        res.json({ success: true, message: `Deposit request ${action}d successfully!` });
-    } catch (e) {
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// Admin Approve/Reject Withdrawal Route
-app.post('/api/admin/withdrawal/action', async (req, res) => {
-    try {
-        await connectDB();
-        const { id, action, password } = req.body;
-        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
-            return res.json({ success: false, message: 'Invalid Password' });
-        }
-
-        const withdrawal = await Withdrawal.findOne({ id });
-        if (!withdrawal) return res.json({ success: false, message: 'Withdrawal request not found' });
-        if (withdrawal.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
-
-        if (action === 'Approve') {
-            withdrawal.status = 'Approved';
-            await withdrawal.save();
-        } else {
-            withdrawal.status = 'Rejected';
-            await withdrawal.save();
-
-            let wallet = await Wallet.findOne({ uid: withdrawal.uid });
-            if (wallet) {
-                wallet.usdt_balance += withdrawal.amount;
+            if (status === 'Approved') {
+                let wallet = await Wallet.findOne({ uid: deposit.uid });
+                if (!wallet) {
+                    wallet = new Wallet({ uid: deposit.uid, usdt_balance: 0 });
+                }
+                wallet.usdt_balance += deposit.amount;
                 await wallet.save();
             }
+        } else if (type === 'withdrawal') {
+            const withdrawal = await Withdrawal.findOne({ id });
+            if (!withdrawal) return res.json({ success: false, message: 'Withdrawal request not found' });
+            if (withdrawal.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+
+            withdrawal.status = status;
+            await withdrawal.save();
+
+            if (status === 'Rejected') {
+                let wallet = await Wallet.findOne({ uid: withdrawal.uid });
+                if (wallet) {
+                    wallet.usdt_balance += withdrawal.amount;
+                    await wallet.save();
+                }
+            }
         }
 
-        res.json({ success: true, message: `Withdrawal request ${action}d successfully!` });
+        res.json({ success: true, message: `Request ${status} successfully!` });
     } catch (e) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
