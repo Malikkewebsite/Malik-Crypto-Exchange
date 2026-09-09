@@ -1,57 +1,37 @@
+const express = require('express');
+const path = require('path');
+const cors = require('cors');
 const crypto = require('crypto');
-const fetch = require('node-fetch'); // ya built-in fetch agar Node 18+ hai
+const https = require('https');
+const db = require('./database/db'); // Aapka local database module
 
-// Bitget API Credentials from Vercel Environment Variables
+const app = express();
+app.use(express.json());
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+
 const BITGET_API_KEY = process.env.BITGET_API_KEY;
 const BITGET_SECRET_KEY = process.env.BITGET_SECRET_KEY;
 const BITGET_PASSPHRASE = process.env.BITGET_PASSPHRASE;
-const BITGET_BASE_URL = 'https://api.bitget.com'; // Bitget live endpoint
+const BITGET_BASE_URL = 'api.bitget.com';
 
-// Helper function to generate Bitget v2 API Signature
+// Bitget API Signature Generator
 function getBitgetSignature(timestamp, method, requestPath, bodyString = '') {
     const what = timestamp + method.toUpperCase() + requestPath + bodyString;
     return crypto.createHmac('sha256', BITGET_SECRET_KEY).update(what).digest('base64');
 }
 
-// Real Trade Execution Route
-app.post('/api/trade/execute', async (req, res) => {
-    try {
-        const { uid, symbol, side, type, price, amount } = req.body;
-        
-        if (!uid || !amount || amount <= 0) {
-            return res.json({ success: false, message: 'Invalid trade parameters' });
-        }
-
-        // Check if environment keys are present
-        if (!BITGET_API_KEY || !BITGET_SECRET_KEY || !BITGET_PASSPHRASE) {
-            return res.json({ success: false, message: 'Bitget API keys missing in Vercel Environment Variables!' });
-        }
-
-        // Map order side and type to Bitget format
-        // Bitget Spot v2 order parameters
-        const endpoint = '/api/v2/spot/trade/place-order';
-        const bodyData = {
-            symbol: symbol, // e.g. BTCUSDT
-            productType: 'spot',
-            marginMode: 'isolated', // ya cross
-            marginCoin: 'USDT',
-            side: side.toLowerCase(), // 'buy' or 'sell'
-            orderType: type.toLowerCase() === 'market' ? 'market' : 'limit',
-            size: amount.toString(),
-            price: type.toLowerCase() === 'limit' ? price.toString() : undefined
-        };
-
-        // Remove undefined fields for market orders
-        if (bodyData.orderType === 'market') {
-            delete bodyData.price;
-        }
-
+// HTTPS helper for Bitget API
+function makeBitgetPostRequest(endpoint, bodyData) {
+    return new Promise((resolve, reject) => {
         const bodyString = JSON.stringify(bodyData);
         const timestamp = Date.now().toString();
         const signature = getBitgetSignature(timestamp, 'POST', endpoint, bodyString);
 
-        // Making the real API call to Bitget Exchange
-        const bitgetRes = await fetch(`${BITGET_BASE_URL}${endpoint}`, {
+        const options = {
+            hostname: BITGET_BASE_URL,
+            port: 443,
+            path: endpoint,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -60,47 +40,268 @@ app.post('/api/trade/execute', async (req, res) => {
                 'ACCESS-PASSPHRASE': BITGET_PASSPHRASE,
                 'ACCESS-TIMESTAMP': timestamp,
                 'locale': 'en_US'
-            },
-            body: bodyString
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(e);
+                }
+            });
         });
 
-        const bitgetResponse = await bitgetRes.json();
+        req.on('error', (error) => { reject(error); });
+        req.write(bodyString);
+        req.end();
+    });
+}
 
-        if (bitgetResponse.code === '00000' || bitgetResponse.success === true || (bitgetResponse.msg && bitgetResponse.msg === 'success')) {
-            // Order successfully placed on real Bitget Exchange!
+// Fetch live Bitget Spot Markets using HTTPS
+app.get('/api/bitget/markets', async (req, res) => {
+    const options = {
+        hostname: BITGET_BASE_URL,
+        port: 443,
+        path: '/api/v2/spot/market/tickers',
+        method: 'GET'
+    };
+
+    const externalReq = https.request(options, (apiRes) => {
+        let data = '';
+        apiRes.on('data', (chunk) => { data += chunk; });
+        apiRes.on('end', () => {
+            try {
+                const parsed = JSON.parse(data);
+                if (parsed && parsed.data) {
+                    res.json({ success: true, markets: parsed.data });
+                } else {
+                    res.json({ success: false, markets: [] });
+                }
+            } catch (e) {
+                res.status(500).json({ success: false, markets: [] });
+            }
+        });
+    });
+
+    externalReq.on('error', () => {
+        res.status(500).json({ success: false, markets: [] });
+    });
+    externalReq.end();
+});
+
+// User Init & Wallet Sync
+app.post('/api/user/init', (req, res) => {
+    let { uid } = req.body;
+    if (!uid) {
+        uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    }
+    const dbData = db.getData();
+    if (!dbData.wallets) dbData.wallets = [];
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0 };
+        dbData.wallets.push(wallet);
+        db.saveData(dbData);
+    }
+
+    res.json({ success: true, uid, wallet });
+});
+
+// User Portfolio
+app.get('/api/user/portfolio/:uid', (req, res) => {
+    const { uid } = req.params;
+    const dbData = db.getData();
+    if (!dbData.wallets) dbData.wallets = [];
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0 };
+        dbData.wallets.push(wallet);
+        db.saveData(dbData);
+    }
+
+    const holdings = (dbData.holdings || []).filter(h => h.uid === uid);
+    const trades = (dbData.trades || []).filter(t => t.uid === uid);
+    const deposits = (dbData.deposits || []).filter(d => d.uid === uid);
+    const withdrawals = (dbData.withdrawals || []).filter(w => w.uid === uid);
+
+    res.json({ success: true, wallet, holdings, trades, deposits, withdrawals });
+});
+
+// Real Trade Execution Route (Bitget Live API)
+app.post('/api/trade/execute', async (req, res) => {
+    try {
+        const { uid, symbol, side, type, price, amount } = req.body;
+        
+        if (!uid || !amount || amount <= 0) {
+            return res.json({ success: false, message: 'Invalid trade parameters' });
+        }
+
+        if (!BITGET_API_KEY || !BITGET_SECRET_KEY || !BITGET_PASSPHRASE) {
+            return res.json({ success: false, message: 'Bitget API keys missing in Vercel Environment Variables!' });
+        }
+
+        const endpoint = '/api/v2/spot/trade/place-order';
+        const bodyData = {
+            symbol: symbol,
+            productType: 'spot',
+            marginMode: 'isolated',
+            marginCoin: 'USDT',
+            side: side.toLowerCase(),
+            orderType: type.toLowerCase() === 'market' ? 'market' : 'limit',
+            size: amount.toString(),
+            price: type.toLowerCase() === 'limit' ? price.toString() : undefined
+        };
+
+        if (bodyData.orderType === 'market') {
+            delete bodyData.price;
+        }
+
+        const bitgetResponse = await makeBitgetPostRequest(endpoint, bodyData);
+
+        if (bitgetResponse && (bitgetResponse.code === '00000' || bitgetResponse.success === true || bitgetResponse.msg === 'success')) {
+            const dbData = db.getData();
+            if (!dbData.trades) dbData.trades = [];
             
-            // Update local database / portfolio for user records
-            const db = dbModule.getData();
-            if (!db.trades) db.trades = [];
-            
-            const executionPrice = price || 0; // Or fetch current market price if market order
             const tradeRecord = {
                 id: 'TRD_' + Date.now(),
                 uid,
                 symbol,
                 side: side.toUpperCase(),
-                price: executionPrice,
+                price: price || 0,
                 amount: parseFloat(amount),
-                fee: amount * 0.001, // Example fee calculation
+                fee: amount * 0.001,
                 timestamp: new Date().toISOString()
             };
 
-            db.trades.push(tradeRecord);
-            dbModule.saveData(db);
+            dbData.trades.push(tradeRecord);
+            db.saveData(dbData);
 
             return res.json({ 
                 success: true, 
-                message: `Real Trade Executed on Bitget Exchange successfully! Order ID: ${bitgetResponse.data?.orderId || 'OK'}` 
+                message: `Real Trade Executed on Bitget successfully! ID: ${bitgetResponse.data?.orderId || 'OK'}` 
             });
         } else {
             return res.json({ 
                 success: false, 
-                message: `Bitget Error: ${bitgetResponse.msg || 'Failed to place order on exchange'}` 
+                message: `Bitget Error: ${bitgetResponse?.msg || 'Failed to place order'}` 
             });
         }
 
     } catch (e) {
-        console.error('Real trade execution error:', e);
+        console.error('Trade execution error:', e);
         res.json({ success: false, message: 'Server error during real trade execution' });
     }
+});
+
+// Deposit Request Route (Goes to Admin Panel as Pending)
+app.post('/api/deposit/request', (req, res) => {
+    const { uid, method, amount, details } = req.body;
+    if (!uid || !amount || amount <= 0) {
+        return res.json({ success: false, message: 'Invalid amount' });
+    }
+
+    const dbData = db.getData();
+    if (!dbData.deposits) dbData.deposits = [];
+
+    const deposit = {
+        id: 'DEP_' + Date.now(),
+        uid,
+        method: method || 'USDT TRC20',
+        amount: parseFloat(amount),
+        details: details || '',
+        status: 'Pending',
+        timestamp: new Date().toISOString()
+    };
+    dbData.deposits.push(deposit);
+    db.saveData(dbData);
+
+    res.json({ success: true, message: 'Deposit request submitted to Admin Panel successfully!' });
+});
+
+// Withdrawal Request Route
+app.post('/api/withdraw/request', (req, res) => {
+    const { uid, address, amount } = req.body;
+    if (!uid || !amount || !address || amount <= 0) {
+        return res.json({ success: false, message: 'Invalid withdrawal details' });
+    }
+
+    const dbData = db.getData();
+    if (!dbData.withdrawals) dbData.withdrawals = [];
+
+    const withdrawal = {
+        id: 'WDR_' + Date.now(),
+        uid,
+        address,
+        amount: parseFloat(amount),
+        status: 'Pending',
+        timestamp: new Date().toISOString()
+    };
+    dbData.withdrawals.push(withdrawal);
+    db.saveData(dbData);
+
+    res.json({ success: true, message: 'Withdrawal request submitted to Admin Panel successfully!' });
+});
+
+// Admin Data Route
+app.post('/api/admin/data', (req, res) => {
+    const { password } = req.body;
+    if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35#')) {
+        return res.json({ success: false, message: 'Invalid Admin Password' });
+    }
+    const dbData = db.getData();
+    res.json({ 
+        success: true, 
+        deposits: dbData.deposits || [], 
+        withdrawals: dbData.withdrawals || [], 
+        admin_profit: 0 
+    });
+});
+
+// Admin Action (Approve/Reject) Route
+app.post('/api/admin/action', (req, res) => {
+    const { password, type, id, status } = req.body;
+    if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35#')) {
+        return res.json({ success: false, message: 'Invalid Admin Password' });
+    }
+
+    const dbData = db.getData();
+
+    if (type === 'deposit') {
+        const deposit = (dbData.deposits || []).find(d => d.id === id);
+        if (!deposit) return res.json({ success: false, message: 'Deposit not found' });
+        
+        deposit.status = status;
+        if (status === 'Approved') {
+            if (!dbData.wallets) dbData.wallets = [];
+            let wallet = dbData.wallets.find(w => w.uid === deposit.uid);
+            if (!wallet) {
+                wallet = { uid: deposit.uid, usdt_balance: 0 };
+                dbData.wallets.push(wallet);
+            }
+            wallet.usdt_balance += parseFloat(deposit.amount);
+        }
+        db.saveData(dbData);
+        return res.json({ success: true, message: `Deposit ${status} successfully!` });
+    }
+
+    if (type === 'withdrawal') {
+        const withdrawal = (dbData.withdrawals || []).find(w => w.id === id);
+        if (!withdrawal) return res.json({ success: false, message: 'Withdrawal not found' });
+
+        withdrawal.status = status;
+        db.saveData(dbData);
+        return res.json({ success: true, message: `Withdrawal ${status} successfully!` });
+    }
+
+    res.json({ success: false, message: 'Invalid action type' });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
