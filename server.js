@@ -87,7 +87,13 @@ app.post('/api/user/init', (req, res) => {
         db.saveData(dbData);
     }
     
-    let wallet = dbData.wallets.find(w => w.uid === uid) || { usdt_balance: 0.0, locked_balance: 0.0 };
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0, locked_balance: 0.0 };
+        dbData.wallets.push(wallet);
+        db.saveData(dbData);
+    }
+
     res.json({ success: true, uid, wallet });
 });
 
@@ -95,7 +101,13 @@ app.post('/api/user/init', (req, res) => {
 app.get('/api/user/portfolio/:uid', (req, res) => {
     const { uid } = req.params;
     const dbData = db.getData();
-    const wallet = dbData.wallets.find(w => w.uid === uid) || { usdt_balance: 0, locked_balance: 0 };
+    let wallet = dbData.wallets.find(w => w.uid === uid);
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0, locked_balance: 0.0 };
+        dbData.wallets.push(wallet);
+        db.saveData(dbData);
+    }
+
     const holdings = dbData.holdings.filter(h => h.uid === uid);
     const trades = dbData.trades.filter(t => t.uid === uid);
     const deposits = dbData.deposits.filter(d => d.uid === uid);
@@ -104,7 +116,7 @@ app.get('/api/user/portfolio/:uid', (req, res) => {
     res.json({ success: true, wallet, holdings, trades, deposits, withdrawals });
 });
 
-// 3. Real Trading Route with Strict Isolated Balance Validation
+// 3. Real Trading Route with Auto-Wallet Creation & Strict Balance Check
 app.post('/api/trade/execute', async (req, res) => {
     const { uid, symbol, side, type, price, amount } = req.body;
     if (!uid || !symbol || !side || !amount) {
@@ -113,7 +125,10 @@ app.post('/api/trade/execute', async (req, res) => {
 
     const dbData = db.getData();
     let wallet = dbData.wallets.find(w => w.uid === uid);
-    if (!wallet) return res.status(400).json({ success: false, message: 'Wallet not found' });
+    if (!wallet) {
+        wallet = { uid, usdt_balance: 0.0, locked_balance: 0.0 };
+        dbData.wallets.push(wallet);
+    }
 
     let currentPrice = price || 1;
     try {
@@ -260,7 +275,11 @@ app.post('/api/admin/action', (req, res) => {
         dep.status = status;
         if (status === 'Approved') {
             let wallet = dbData.wallets.find(w => w.uid === dep.uid);
-            if (wallet) wallet.usdt_balance += dep.amount;
+            if (!wallet) {
+                wallet = { uid: dep.uid, usdt_balance: 0.0, locked_balance: 0.0 };
+                dbData.wallets.push(wallet);
+            }
+            wallet.usdt_balance += dep.amount;
         }
     } else if (type === 'withdrawal') {
         let wdr = dbData.withdrawals.find(w => w.id === id);
@@ -268,7 +287,11 @@ app.post('/api/admin/action', (req, res) => {
         wdr.status = status;
         if (status === 'Rejected') {
             let wallet = dbData.wallets.find(w => w.uid === wdr.uid);
-            if (wallet) wallet.usdt_balance += wdr.amount;
+            if (!wallet) {
+                wallet = { uid: wdr.uid, usdt_balance: 0.0, locked_balance: 0.0 };
+                dbData.wallets.push(wallet);
+            }
+            wallet.usdt_balance += wdr.amount;
         }
     }
 
