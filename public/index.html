@@ -3,67 +3,170 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Malik Crypto Exchange - Professional Trading</title>
-    <link rel="stylesheet" href="/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <title>Malik Crypto Exchange - Pro Trader</title>
+    <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-    <div class="app-container">
-        <!-- Top Navbar -->
-        <header class="navbar">
-            <div class="logo">⚡ Malik Crypto Exchange</div>
-            <div class="user-info">
-                <span>UID: <strong id="userUidDisplay">Loading...</strong></span>
-                <span>USDT Balance: <strong id="usdtBalance">0.00</strong></span>
-            </div>
-        </header>
+<body class="dark-theme">
+    <header class="header">
+        <div class="logo">⚡ Malik Crypto Exchange</div>
+        <div class="user-info">
+            <span id="userUid">UID: Loading...</span>
+            <span id="userBalance">USDT Balance: 0.00</span>
+            <button id="depositBtn" class="btn-sm">Deposit</button>
+            <button id="withdrawBtn" class="btn-sm">Withdraw</button>
+            <button id="adminBtn" class="btn-sm admin-badge">Admin</button>
+        </div>
+    </header>
 
-        <!-- Main Trading Interface -->
-        <div class="trading-grid">
-            <!-- Left & Center: Chart & Market Info -->
-            <div class="market-section">
-                <div class="market-header">
-                    <h2>BTCUSDT <span id="currentPrice" class="price-tag">0.00</span></h2>
-                </div>
-                <div class="chart-box">
-                    <iframe src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=D&theme=dark" width="100% " height="400px" frameborder="0"></iframe>
-                </div>
+    <main class="main-container">
+        <section class="trading-section">
+            <div class="pair-header">
+                <h2>BTCUSDT <span id="livePrice">0.00</span></h2>
+            </div>
+            
+            <div class="chart-container" id="tradingview_chart">
+                <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                <script type="text/javascript">
+                new TradingView.widget({
+                    "width": "100%",
+                    "height": "400",
+                    "symbol": "BINANCE:BTCUSDT",
+                    "interval": "15",
+                    "timezone": "Etc/UTC",
+                    "theme": "dark",
+                    "style": "1",
+                    "locale": "en",
+                    "toolbar_bg": "#f1f3f6",
+                    "enable_publishing": false,
+                    "container_id": "tradingview_chart"
+                });
+                </script>
             </div>
 
-            <!-- Right: Order Form -->
-            <div class="order-form-section">
+            <div class="order-box">
                 <h3>Spot Trading</h3>
                 <div class="form-group">
                     <label>Order Type</label>
                     <select id="orderType">
-                        <option value="MARKET">Market</option>
-                        <option value="LIMIT">Limit</option>
+                        <option value="Market">Market</option>
+                        <option value="Limit">Limit</option>
                     </select>
+                </div>
+                <div class="form-group" id="limitPriceGroup" style="display:none;">
+                    <label>Limit Price (USDT)</label>
+                    <input type="number" id="limitPrice" placeholder="0.00">
                 </div>
                 <div class="form-group">
                     <label>Amount (BTC)</label>
-                    <input type="number" id="orderAmount" step="0.0001" placeholder="0.001">
+                    <input type="number" id="tradeAmount" value="0.001" step="0.0001">
                 </div>
-                <div class="button-group">
-                    <button class="btn-buy" onclick="placeOrder('BUY')">BUY / LONG</button>
-                    <button class="btn-sell" onclick="placeOrder('SELL')">SELL / SHORT</button>
+                <div class="action-buttons">
+                    <button id="buyBtn" class="btn-buy">BUY / LONG</button>
+                    <button id="sellBtn" class="btn-sell">SELL / SHORT</button>
                 </div>
-                <div id="orderMessage" class="msg"></div>
             </div>
-        </div>
+        </section>
 
-        <!-- User Holdings & History Section -->
-        <div class="portfolio-section">
+        <section class="portfolio-section">
             <h3>My Holdings</h3>
-            <table id="holdingsTable">
+            <table class="data-table">
                 <thead>
-                    <tr><th>Symbol</th><th>Amount</th><th>Avg Price</th></tr>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Amount</th>
+                        <th>Avg Price</th>
+                    </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody id="holdingsTableBody">
+                    <tr><td colspan="3">No holdings found</td></tr>
+                </tbody>
             </table>
+
+            <h3>My Recent Trades</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Side</th>
+                        <th>Price</th>
+                        <th>Amount</th>
+                        <th>Fee</th>
+                    </tr>
+                </thead>
+                <tbody id="tradesTableBody">
+                    <tr><td colspan="5">No trades found</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <div id="depositModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close" id="closeDeposit">&times;</span>
+            <h3>Deposit USDT / Easypaisa</h3>
+            <div class="form-group">
+                <label>Method</label>
+                <select id="depositMethod">
+                    <option value="USDT TRC20">USDT TRC20 (Address: TXYZ...wallet...)</option>
+                    <option value="Easypaisa">Easypaisa (Account: 03001234567)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amount (USD / PKR)</label>
+                <input type="number" id="depositAmount" placeholder="Enter amount">
+            </div>
+            <div class="form-group">
+                <label>Transaction Hash / Sender Details</label>
+                <input type="text" id="depositDetails" placeholder="TxID or Easypaisa TID">
+            </div>
+            <button id="submitDeposit" class="btn-primary">Submit Deposit Request</button>
         </div>
     </div>
 
-    <script src="/js/app.js"></script>
+    <div id="withdrawModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close" id="closeWithdraw">&times;</span>
+            <h3>Withdraw USDT</h3>
+            <div class="form-group">
+                <label>TRC20 Wallet Address</label>
+                <input type="text" id="withdrawAddress" placeholder="Enter TRC20 address">
+            </div>
+            <div class="form-group">
+                <label>Amount (USDT)</label>
+                <input type="number" id="withdrawAmount" placeholder="Enter amount">
+            </div>
+            <button id="submitWithdraw" class="btn-primary">Submit Withdrawal</button>
+        </div>
+    </div>
+
+    <div id="adminModal" class="modal" style="display:none;">
+        <div class="modal-content admin-content">
+            <span class="close" id="closeAdmin">&times;</span>
+            <h3>Admin Control Panel</h3>
+            <div class="admin-stats">
+                <p>Total Admin Profit / Fees: <span id="adminProfit">0.00</span> USDT</p>
+            </div>
+            <h4>Pending Deposits & Withdrawals</h4>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>UID</th>
+                            <th>Amount</th>
+                            <th>Details</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminRequestsBody">
+                        <tr><td colspan="6">Loading requests...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
 </body>
 </html>
