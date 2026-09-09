@@ -182,7 +182,6 @@ app.post('/api/trade/execute', async (req, res) => {
             await wallet.save();
         }
 
-        // Hit Real Bitget Exchange via API in background
         executeBitgetRealOrder(symbol, side, effectiveAmount).then(bitgetRes => {
             console.log('Bitget Live Order Executed:', bitgetRes);
         }).catch(err => {
@@ -232,6 +231,7 @@ app.post('/api/withdraw/request', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
+// Admin Panel Data Route
 app.post('/api/admin/data', async (req, res) => {
     try {
         await connectDB();
@@ -244,6 +244,73 @@ app.post('/api/admin/data', async (req, res) => {
         const adminConfig = await Config.findOne({ key: 'admin_fees' });
         res.json({ success: true, deposits, withdrawals, trades, wallets, admin_profit: adminConfig ? adminConfig.value : 0 });
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
+});
+
+// Admin Approve/Reject Deposit Route
+app.post('/api/admin/deposit/action', async (req, res) => {
+    try {
+        await connectDB();
+        const { id, action, password } = req.body;
+        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
+            return res.json({ success: false, message: 'Invalid Password' });
+        }
+
+        const deposit = await Deposit.findOne({ id });
+        if (!deposit) return res.json({ success: false, message: 'Deposit request not found' });
+        if (deposit.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+
+        if (action === 'Approve') {
+            deposit.status = 'Approved';
+            await deposit.save();
+
+            let wallet = await Wallet.findOne({ uid: deposit.uid });
+            if (!wallet) {
+                wallet = new Wallet({ uid: deposit.uid, usdt_balance: 0 });
+            }
+            wallet.usdt_balance += deposit.amount;
+            await wallet.save();
+        } else {
+            deposit.status = 'Rejected';
+            await deposit.save();
+        }
+
+        res.json({ success: true, message: `Deposit request ${action}d successfully!` });
+    } catch (e) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// Admin Approve/Reject Withdrawal Route
+app.post('/api/admin/withdrawal/action', async (req, res) => {
+    try {
+        await connectDB();
+        const { id, action, password } = req.body;
+        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
+            return res.json({ success: false, message: 'Invalid Password' });
+        }
+
+        const withdrawal = await Withdrawal.findOne({ id });
+        if (!withdrawal) return res.json({ success: false, message: 'Withdrawal request not found' });
+        if (withdrawal.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+
+        if (action === 'Approve') {
+            withdrawal.status = 'Approved';
+            await withdrawal.save();
+        } else {
+            withdrawal.status = 'Rejected';
+            await withdrawal.save();
+
+            let wallet = await Wallet.findOne({ uid: withdrawal.uid });
+            if (wallet) {
+                wallet.usdt_balance += withdrawal.amount;
+                await wallet.save();
+            }
+        }
+
+        res.json({ success: true, message: `Withdrawal request ${action}d successfully!` });
+    } catch (e) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
