@@ -24,7 +24,7 @@ async function executeBitgetApiOrder(symbol, side, orderType, size, price) {
     const passphrase = process.env.BITGET_PASSPHRASE;
 
     if (!apiKey || !secretKey || !passphrase) {
-        throw new Error('Bitget API credentials are not configured in Vercel environment variables.');
+        throw new Error('Bitget API credentials missing');
     }
 
     const timestamp = Date.now().toString();
@@ -34,12 +34,14 @@ async function executeBitgetApiOrder(symbol, side, orderType, size, price) {
     const body = {
         symbol: symbol,
         productType: 'spot',
-        marginMode: 'spot',
         side: side.toLowerCase(),
         orderType: orderType.toLowerCase(),
         size: size.toString(),
-        price: orderType.toLowerCase() === 'limit' ? price.toString() : undefined
+        force: 'normal'
     };
+    if (orderType.toLowerCase() === 'limit') {
+        body.price = price.toString();
+    }
 
     const signature = sign(method, requestPath, body, timestamp, secretKey);
 
@@ -99,7 +101,6 @@ app.post('/api/trade/execute', async (req, res) => {
     let wallet = dbData.wallets.find(w => w.uid === uid);
     if (!wallet) return res.status(400).json({ success: false, message: 'Wallet not found' });
 
-    // Fetch live market price
     let currentPrice = price || 78950;
     try {
         const response = await axios.get(`https://api.bitget.com/api/v2/spot/market/tickers?symbol=${symbol}`);
@@ -113,7 +114,6 @@ app.post('/api/trade/execute', async (req, res) => {
     const fee = totalCost * feeRate;
     const totalRequired = totalCost + fee;
 
-    // Strict Isolated Balance Check: User cannot trade more than their own balance
     if (side.toUpperCase() === 'BUY') {
         if (wallet.usdt_balance < totalRequired) {
             return res.status(400).json({ success: false, message: 'Insufficient USDT balance in your isolated wallet' });
@@ -140,12 +140,13 @@ app.post('/api/trade/execute', async (req, res) => {
         wallet.usdt_balance += (totalCost - fee);
     }
 
-    // Try executing real order on Bitget Exchange if API keys are present
     let realApiResponse = null;
+    let apiStatusMsg = 'Trade executed with isolated balance';
     try {
         realApiResponse = await executeBitgetApiOrder(symbol, side, type, amount, currentPrice);
+        apiStatusMsg = 'Trade executed successfully on Bitget Exchange & Local Ledger';
     } catch (err) {
-        // If API keys are not provided yet, it logs the simulation trade securely
+        // If API credentials are not set or exchange fails, local isolated trade remains successful
     }
 
     const tradeRecord = {
@@ -163,7 +164,7 @@ app.post('/api/trade/execute', async (req, res) => {
     dbData.fees.push({ id: 'FEE_' + Date.now(), uid, amount: fee, timestamp: new Date().toISOString() });
 
     db.saveData(dbData);
-    res.json({ success: true, message: 'Trade executed successfully with isolated balance', trade: tradeRecord, wallet, realApiResponse });
+    res.json({ success: true, message: apiStatusMsg, trade: tradeRecord, wallet, realApiResponse });
 });
 
 // 4. Deposit & Withdrawal Routes
