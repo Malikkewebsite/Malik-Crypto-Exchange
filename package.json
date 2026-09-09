@@ -13,8 +13,7 @@
     "dotenv": "^16.4.5",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
-    "axios": "^1.6.8",
-    "better-sqlite3": "^9.4.3"
+    "axios": "^1.6.8"
   },
   "engines": {
     "node": ">=18.x"
