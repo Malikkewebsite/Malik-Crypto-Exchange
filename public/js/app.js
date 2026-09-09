@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Fetch Bitget Markets
     loadMarkets();
-    setInterval(loadMarkets, 10000); // Refresh markets every 10s
+    setInterval(loadMarkets, 10000);
 
     async function loadMarkets() {
         try {
@@ -48,7 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    document.getElementById('marketSearch').addEventListener('input', loadMarkets);
+    const searchInput = document.getElementById('marketSearch');
+    if(searchInput) searchInput.addEventListener('input', loadMarkets);
 
     async function loadUserData() {
         try {
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.success) {
                 document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
+                document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
                 // Render Holdings
                 const holdingsBody = document.getElementById('holdingsTableBody');
@@ -96,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Trade Execution (Buy/Sell)
+    // Trade Execution
     async function executeTrade(side) {
         const amount = parseFloat(document.getElementById('tradeAmount').value);
         const orderType = document.getElementById('orderType').value;
@@ -135,11 +137,27 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('depositBtn').onclick = () => depositModal.style.display = 'flex';
     document.getElementById('closeDeposit').onclick = () => depositModal.style.display = 'none';
 
-    document.getElementById('withdrawBtn').onclick = () => withdrawModal.style.display = 'flex';
+    document.getElementById('withdrawBtn').onclick = () => {
+        withdrawModal.style.display = 'flex';
+        updateWhatsAppLink();
+    };
     document.getElementById('closeWithdraw').onclick = () => withdrawModal.style.display = 'none';
 
     document.getElementById('adminBtn').onclick = () => adminModal.style.display = 'flex';
     document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
+
+    // Auto-update WhatsApp link with dynamic UID and Balance
+    function updateWhatsAppLink() {
+        const balanceText = document.getElementById('userBalance').innerText;
+        const message = `Hello Admin, I want to request a withdrawal.\nMy User ID: ${uid}\n${balanceText}`;
+        const encodedMsg = encodeURIComponent(message);
+        
+        // Find WhatsApp anchor tag inside withdraw modal and update href
+        const waLink = withdrawModal.querySelector('a[href*="wa.me"]');
+        if(waLink) {
+            waLink.href = `https://wa.me/923125124424?text=${encodedMsg}`;
+        }
+    }
 
     // Submit Deposit Request
     document.getElementById('submitDeposit').onclick = async () => {
@@ -163,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
             depositModal.style.display = 'none';
             document.getElementById('depositAmount').value = '';
             document.getElementById('depositDetails').value = '';
+            loadUserData();
         }
     };
 
@@ -244,6 +263,6 @@ window.handleAdminAction = async function(type, id, status, password) {
     const r = await res.json();
     alert(r.message);
     if (r.success) {
-        document.getElementById('adminBtn').click(); // Refresh admin panel
+        document.getElementById('adminBtn').click();
     }
 };
