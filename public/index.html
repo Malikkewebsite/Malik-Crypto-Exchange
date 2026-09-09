@@ -3,170 +3,196 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Malik Crypto Exchange - Pro Trader</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Malik Crypto Exchange - Live Bitget Trading</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0b0e11; color: #eaecef; padding: 10px; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; background: #181a20; padding: 12px 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #2b313a; }
+        .logo { font-size: 20px; font-weight: bold; color: #f0b90b; display: flex; align-items: center; gap: 8px; }
+        .user-info { display: flex; gap: 15px; align-items: center; font-size: 14px; }
+        .btn-top { background: #2b313a; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        .btn-top:hover { background: #f0b90b; color: #000; }
+
+        .main-container { display: grid; grid-template-columns: 2fr 1fr; gap: 15px; }
+        @media(max-width: 900px) { .main-container { grid-template-columns: 1fr; } }
+
+        .card { background: #181a20; border: 1px solid #2b313a; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .section-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #f0b90b; display: flex; justify-content: space-between; align-items: center; }
+
+        /* Market Search & List */
+        .search-box { width: 100%; padding: 8px 12px; background: #0b0e11; border: 1px solid #2b313a; color: #fff; border-radius: 4px; margin-bottom: 10px; }
+        .market-list { max-height: 350px; overflow-y: auto; }
+        .market-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #23272e; cursor: pointer; transition: 0.2s; }
+        .market-item:hover { background: #2b313a; }
+        .market-symbol { font-weight: bold; color: #eaecef; }
+        .market-price { color: #0ecb81; }
+
+        /* Trading Form */
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; color: #848e9c; margin-bottom: 5px; }
+        .form-control { width: 100%; padding: 10px; background: #0b0e11; border: 1px solid #2b313a; color: #fff; border-radius: 4px; }
+        .trade-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .btn-buy { background: #0ecb81; color: #000; font-weight: bold; padding: 12px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-sell { background: #f6465d; color: #fff; font-weight: bold; padding: 12px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-buy:hover, .btn-sell:hover { opacity: 0.9; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 5px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #2b313a; }
+        th { color: #848e9c; }
+
+        /* Professional Modals (Popups) */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-box { background: #181a20; border: 1px solid #2b313a; width: 400px; max-width: 90%; border-radius: 10px; padding: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); position: relative; }
+        .modal-close { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #848e9c; font-size: 18px; cursor: pointer; }
+        .modal-close:hover { color: #fff; }
+    </style>
 </head>
-<body class="dark-theme">
-    <header class="header">
+<body>
+
+    <header>
         <div class="logo">⚡ Malik Crypto Exchange</div>
         <div class="user-info">
             <span id="userUid">UID: Loading...</span>
-            <span id="userBalance">USDT Balance: 0.00</span>
-            <button id="depositBtn" class="btn-sm">Deposit</button>
-            <button id="withdrawBtn" class="btn-sm">Withdraw</button>
-            <button id="adminBtn" class="btn-sm admin-badge">Admin</button>
+            <span id="userBalance" style="color: #0ecb81; font-weight: bold;">USDT Balance: 0.00</span>
+            <button class="btn-top" id="depositBtn">Deposit</button>
+            <button class="btn-top" id="withdrawBtn">Withdraw</button>
+            <button class="btn-top" id="adminBtn" style="background: #f0b90b; color: #000;">Admin Panel</button>
         </div>
     </header>
 
-    <main class="main-container">
-        <section class="trading-section">
-            <div class="pair-header">
-                <h2>BTCUSDT <span id="livePrice">0.00</span></h2>
-            </div>
-            
-            <div class="chart-container" id="tradingview_chart">
-                <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-                <script type="text/javascript">
-                new TradingView.widget({
-                    "width": "100%",
-                    "height": "400",
-                    "symbol": "BINANCE:BTCUSDT",
-                    "interval": "15",
-                    "timezone": "Etc/UTC",
-                    "theme": "dark",
-                    "style": "1",
-                    "locale": "en",
-                    "toolbar_bg": "#f1f3f6",
-                    "enable_publishing": false,
-                    "container_id": "tradingview_chart"
-                });
-                </script>
+    <div class="main-container">
+        <div>
+            <div class="card">
+                <div class="section-title">
+                    <span>Bitget Spot Markets</span>
+                    <span id="selectedPairHeader" style="color: #0ecb81;">BTCUSDT</span>
+                </div>
+                <input type="text" id="marketSearch" class="search-box" placeholder="Search coin (e.g. ETH, XRP, BTC)...">
+                <div class="market-list" id="marketListContainer">
+                    <div style="text-align: center; padding: 20px; color: #848e9c;">Loading Bitget markets...</div>
+                </div>
             </div>
 
-            <div class="order-box">
-                <h3>Spot Trading</h3>
+            <div class="card">
+                <div class="section-title">My Holdings</div>
+                <table>
+                    <thead>
+                        <tr><th>Symbol</th><th>Amount</th><th>Avg Price</th></tr>
+                    </thead>
+                    <tbody id="holdingsTableBody">
+                        <tr><td colspan="3">No holdings found</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div>
+            <div class="card">
+                <div class="section-title">Spot Trading (<span id="tradingPairTitle">BTCUSDT</span>)</div>
                 <div class="form-group">
                     <label>Order Type</label>
-                    <select id="orderType">
-                        <option value="Market">Market</option>
-                        <option value="Limit">Limit</option>
+                    <select id="orderType" class="form-control">
+                        <option value="Market">Market Order</option>
+                        <option value="Limit">Limit Order</option>
                     </select>
                 </div>
-                <div class="form-group" id="limitPriceGroup" style="display:none;">
+                <div class="form-group" id="limitPriceGroup" style="display: none;">
                     <label>Limit Price (USDT)</label>
-                    <input type="number" id="limitPrice" placeholder="0.00">
+                    <input type="number" id="limitPrice" class="form-control" placeholder="0.00">
                 </div>
                 <div class="form-group">
-                    <label>Amount (BTC)</label>
-                    <input type="number" id="tradeAmount" value="0.001" step="0.0001">
+                    <label>Amount</label>
+                    <input type="number" id="tradeAmount" class="form-control" placeholder="0.001" step="0.0001">
                 </div>
-                <div class="action-buttons">
-                    <button id="buyBtn" class="btn-buy">BUY / LONG</button>
-                    <button id="sellBtn" class="btn-sell">SELL / SHORT</button>
+                <div class="trade-buttons">
+                    <button class="btn-buy" id="buyBtn">BUY / LONG</button>
+                    <button class="btn-sell" id="sellBtn">SELL / SHORT</button>
                 </div>
             </div>
-        </section>
 
-        <section class="portfolio-section">
-            <h3>My Holdings</h3>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th>Amount</th>
-                        <th>Avg Price</th>
-                    </tr>
-                </thead>
-                <tbody id="holdingsTableBody">
-                    <tr><td colspan="3">No holdings found</td></tr>
-                </tbody>
-            </table>
-
-            <h3>My Recent Trades</h3>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Side</th>
-                        <th>Price</th>
-                        <th>Amount</th>
-                        <th>Fee</th>
-                    </tr>
-                </thead>
-                <tbody id="tradesTableBody">
-                    <tr><td colspan="5">No trades found</td></tr>
-                </tbody>
-            </table>
-        </section>
-    </main>
-
-    <div id="depositModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <span class="close" id="closeDeposit">&times;</span>
-            <h3>Deposit USDT / Easypaisa</h3>
-            <div class="form-group">
-                <label>Method</label>
-                <select id="depositMethod">
-                    <option value="USDT TRC20">USDT TRC20 (Address: TXYZ...wallet...)</option>
-                    <option value="Easypaisa">Easypaisa (Account: 03001234567)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Amount (USD / PKR)</label>
-                <input type="number" id="depositAmount" placeholder="Enter amount">
-            </div>
-            <div class="form-group">
-                <label>Transaction Hash / Sender Details</label>
-                <input type="text" id="depositDetails" placeholder="TxID or Easypaisa TID">
-            </div>
-            <button id="submitDeposit" class="btn-primary">Submit Deposit Request</button>
-        </div>
-    </div>
-
-    <div id="withdrawModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <span class="close" id="closeWithdraw">&times;</span>
-            <h3>Withdraw USDT</h3>
-            <div class="form-group">
-                <label>TRC20 Wallet Address</label>
-                <input type="text" id="withdrawAddress" placeholder="Enter TRC20 address">
-            </div>
-            <div class="form-group">
-                <label>Amount (USDT)</label>
-                <input type="number" id="withdrawAmount" placeholder="Enter amount">
-            </div>
-            <button id="submitWithdraw" class="btn-primary">Submit Withdrawal</button>
-        </div>
-    </div>
-
-    <div id="adminModal" class="modal" style="display:none;">
-        <div class="modal-content admin-content">
-            <span class="close" id="closeAdmin">&times;</span>
-            <h3>Admin Control Panel</h3>
-            <div class="admin-stats">
-                <p>Total Admin Profit / Fees: <span id="adminProfit">0.00</span> USDT</p>
-            </div>
-            <h4>Pending Deposits & Withdrawals</h4>
-            <div style="overflow-x:auto;">
-                <table class="data-table">
+            <div class="card">
+                <div class="section-title">Recent Trades</div>
+                <table>
                     <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>UID</th>
-                            <th>Amount</th>
-                            <th>Details</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
+                        <tr><th>ID</th><th>Side</th><th>Price</th><th>Amount</th><th>Fee</th></tr>
                     </thead>
-                    <tbody id="adminRequestsBody">
-                        <tr><td colspan="6">Loading requests...</td></tr>
+                    <tbody id="tradesTableBody">
+                        <tr><td colspan="5">No trades found</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <script src="js/app.js"></script>
+    <div class="modal-overlay" id="depositModal">
+        <div class="modal-box">
+            <button class="modal-close" id="closeDeposit">&times;</button>
+            <div class="section-title">Deposit USDT</div>
+            <div class="form-group">
+                <label>Select Method</label>
+                <select id="depositMethod" class="form-control">
+                    <option value="USDT TRC20">USDT (TRC20)</option>
+                    <option value="Easypaisa">Easypaisa / JazzCash</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Amount (USDT / PKR)</label>
+                <input type="number" id="depositAmount" class="form-control" placeholder="Enter amount">
+            </div>
+            <div class="form-group">
+                <label>Transaction Hash / Sender Details</label>
+                <input type="text" id="depositDetails" class="form-control" placeholder="Enter TXID or account number">
+            </div>
+            <button class="btn-buy" id="submitDeposit" style="width: 100%; margin-top: 10px;">Submit Deposit Request</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="withdrawModal">
+        <div class="modal-box">
+            <button class="modal-close" id="closeWithdraw">&times;</button>
+            <div class="section-title">Withdraw USDT</div>
+            <div class="form-group">
+                <label>Destination Address (TRC20)</label>
+                <input type="text" id="withdrawAddress" class="form-control" placeholder="Enter wallet address">
+            </div>
+            <div class="form-group">
+                <label>Amount (USDT)</label>
+                <input type="number" id="withdrawAmount" class="form-control" placeholder="Enter amount">
+            </div>
+            <button class="btn-sell" id="submitWithdraw" style="width: 100%; margin-top: 10px;">Request Withdrawal</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="adminModal">
+        <div class="modal-box" style="width: 600px;">
+            <button class="modal-close" id="closeAdmin">&times;</button>
+            <div class="section-title">Admin Dashboard</div>
+            
+            <div id="adminLoginBox">
+                <div class="form-group">
+                    <label>Enter Admin Password</label>
+                    <input type="password" id="adminPasswordInput" class="form-control" placeholder="Password">
+                </div>
+                <button class="btn-buy" id="adminLoginBtn" style="width: 100%;">Login to Admin</button>
+            </div>
+
+            <div id="adminDashboardContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                <div style="font-size: 14px; margin-bottom: 15px; color: #f0b90b;">Admin Total Profit Fee: $<span id="adminProfit">0.00</span></div>
+                <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px;">Pending Deposit & Withdrawal Requests</div>
+                <table>
+                    <thead>
+                        <tr><th>Type</th><th>UID</th><th>Amount</th><th>Details</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody id="adminRequestsBody">
+                        <tr><td colspan="6">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
 </body>
 </html>
