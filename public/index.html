@@ -25,12 +25,10 @@
             </div>
         </div>
 
-        <!-- Toast Notification Element -->
         <div id="toastNotification"></div>
 
         <!-- Trading Layout Grid -->
         <div class="trading-layout">
-            
             <!-- Bitget Markets Card -->
             <div class="card">
                 <h3 style="font-size: 14px; margin-bottom: 6px;">Bitget Spot Markets &nbsp; <span id="selectedPairHeader" style="color:#f0b90b;">BTCUSDT</span></h3>
@@ -40,7 +38,7 @@
                 </div>
             </div>
 
-            <!-- Spot Trading Form Card with MAX Button Added -->
+            <!-- Spot Trading Form Card with MAX Button -->
             <div class="card">
                 <h3 style="font-size: 14px; margin-bottom: 8px;">Spot Trading &nbsp; (<span id="tradingPairTitle" style="color:#f0b90b;">BTCUSDT</span>)</h3>
                 <div class="trade-form">
@@ -57,7 +55,7 @@
                     </div>
                     <div class="form-group">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label>Amount</label>
+                            <label>Amount (2% Fee applies)</label>
                             <button type="button" id="maxHoldingsBtn" style="background: #f0b90b; border: none; padding: 2px 8px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 11px; color: #000;">MAX</button>
                         </div>
                         <input type="number" id="tradeAmount" placeholder="0.00">
@@ -69,9 +67,12 @@
                 </div>
             </div>
 
-            <!-- Holdings Card -->
+            <!-- Holdings & Stats Card -->
             <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 6px;">My Holdings</h3>
+                <h3 style="font-size: 14px; margin-bottom: 6px;">My Holdings & P&L Summary</h3>
+                <div id="userStatsSummary" style="font-size: 12px; background: #1e2329; padding: 8px; border-radius: 4px; margin-bottom: 8px; color: #d1d5db;">
+                    Total Deposited: $0.00 | Withdrawn: $0.00 | Net P&L: $0.00
+                </div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -90,7 +91,7 @@
 
             <!-- Recent Trades Card -->
             <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 6px;">Recent Trades</h3>
+                <h3 style="font-size: 14px; margin-bottom: 6px;">Recent Trades (Incl. 2% Fee)</h3>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -99,7 +100,7 @@
                                 <th>Side</th>
                                 <th>Price</th>
                                 <th>Amount</th>
-                                <th>Fee</th>
+                                <th>Fee (2%)</th>
                             </tr>
                         </thead>
                         <tbody id="tradesTableBody">
@@ -108,7 +109,6 @@
                     </table>
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -129,7 +129,7 @@
             </div>
             <div class="form-group">
                 <label>Txn Hash / Details</label>
-                <input type="text" id="depositDetails" placeholder="Transaction ID">
+                <input type="text" id="depositDetails" placeholder="Transaction ID / Name">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 5px;">
                 <button id="submitDeposit" style="background:#0ecb81; border:none; padding:8px; flex:1; font-weight:bold; border-radius:4px; cursor:pointer;">Submit</button>
@@ -138,10 +138,15 @@
         </div>
     </div>
 
-    <!-- Withdraw Modal -->
+    <!-- Withdraw Modal with Contact Information -->
     <div class="modal" id="withdrawModal">
         <div class="modal-content">
             <h3>Withdraw USDT</h3>
+            <div style="background: rgba(240, 185, 11, 0.1); border: 1px solid #f0b90b; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; color: #f0b90b;">
+                Need help with withdrawal? Contact Admin Moosa Malik directly:<br>
+                <b>Phone / WhatsApp:</b> +92 300 0000000<br>
+                <a href="https://wa.me/923000000000" target="_blank" style="display:inline-block; margin-top:4px; background:#25D366; color:#fff; padding:4px 8px; border-radius:3px; text-decoration:none; font-weight:bold;">💬 Chat on WhatsApp</a>
+            </div>
             <div class="form-group">
                 <label>Destination Address</label>
                 <input type="text" id="withdrawAddress" placeholder="Enter wallet address">
@@ -159,7 +164,7 @@
 
     <!-- Admin Panel Modal -->
     <div class="modal" id="adminModal">
-        <div class="modal-content" style="max-width: 400px; max-height: 80vh; overflow-y: auto;">
+        <div class="modal-content" style="max-width: 450px; max-height: 80vh; overflow-y: auto;">
             <h3>Admin Panel</h3>
             <div id="adminLoginBox">
                 <div class="form-group" style="margin-top: 10px;">
@@ -169,8 +174,8 @@
                 <button id="adminLoginBtn" style="background:#f0b90b; color:#000; border:none; padding:8px; width:100%; font-weight:bold; border-radius:4px; margin-top:10px; cursor:pointer;">Login</button>
             </div>
             <div id="adminDashboardContent" style="display: none;">
-                <p style="font-size: 13px; margin: 8px 0;">Total Admin Fees / Profit: $<span id="adminProfit">0.00</span></p>
-                <h4 style="font-size: 13px; margin: 10px 0 5px 0;">User Requests</h4>
+                <p style="font-size: 13px; margin: 8px 0;">Total 2% Trading Fees / Profit: $<span id="adminProfit">0.00</span></p>
+                <h4 style="font-size: 13px; margin: 10px 0 5px 0;">User Requests & History</h4>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -195,7 +200,29 @@
 
     <script src="/js/app.js"></script>
     <script>
-        // MAX Button functionality integration for existing app.js
+        // Ensure UID persistence on refresh
+        window.addEventListener('DOMContentLoaded', async () => {
+            let uid = localStorage.getItem('uid');
+            if(!uid) {
+                uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                localStorage.setItem('uid', uid);
+            }
+            document.getElementById('userUid').innerText = 'UID: ' + uid;
+            
+            // Fetch initial portfolio & stats
+            try {
+                const res = await fetch(`/api/user/portfolio/${uid}`);
+                const data = await res.json();
+                if(data.success) {
+                    document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
+                    if(data.stats) {
+                        document.getElementById('userStatsSummary').innerHTML = `Total Deposited: $${data.stats.totalDeposited.toFixed(2)} | Withdrawn: $${data.stats.totalWithdrawn.toFixed(2)} | Net P&L: $${data.stats.netProfitLoss.toFixed(2)}`;
+                    }
+                }
+            } catch(e) { console.error('Init error', e); }
+        });
+
+        // MAX Button functionality
         document.getElementById('maxHoldingsBtn').addEventListener('click', async () => {
             const currentSymbol = document.getElementById('selectedPairHeader').innerText.trim();
             const uid = localStorage.getItem('uid');
@@ -211,9 +238,7 @@
                         alert('No holdings found for ' + currentSymbol);
                     }
                 }
-            } catch(e) {
-                console.error('Error fetching max holdings', e);
-            }
+            } catch(e) { console.error('MAX error', e); }
         });
     </script>
 </body>
