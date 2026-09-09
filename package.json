@@ -1,0 +1,22 @@
+{
+  "name": "crypto-trading-platform",
+  "version": "1.0.0",
+  "description": "Professional multi-user crypto trading platform with Bitget integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.6.8",
+    "better-sqlite3": "^9.4.3"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
