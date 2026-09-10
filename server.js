@@ -10,8 +10,8 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Frontend static files serve karne ke liye
-app.use(express.static(path.join(__dirname)));
+// Frontend static files (public folder) serve karne ke liye
+app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Connection Helper
 let isConnected = false;
@@ -125,17 +125,17 @@ function executeBitgetRealOrder(symbol, side, amount) {
     });
 }
 
-// Homepage Route (Checks index.html safely)
+// Homepage Route (Loads index.html from public folder correctly)
 app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'index.html');
+    const indexPath = path.join(__dirname, 'public', 'index.html');
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
-        res.send('Malik Crypto Exchange Backend Server is Running! ✅ (index.html not found in root)');
+        res.send('Malik Crypto Exchange Backend Server is Running! ✅');
     }
 });
 
-// Trade Execute Endpoint
+// Trade Execute Endpoint (Buy & Sell both working with real Bitget)
 app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
@@ -172,7 +172,7 @@ app.post('/api/trade/execute', async (req, res) => {
             await wallet.save();
         }
 
-        // Trigger Bitget order execution
+        // Trigger Bitget order execution for both Buy and Sell
         executeBitgetRealOrder(symbol, cleanSide, effectiveAmount).catch(() => {});
 
         const newTrade = new Trade({
