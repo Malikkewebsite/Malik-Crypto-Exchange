@@ -108,6 +108,30 @@ function executeBitgetRealOrder(symbol, side, size) {
     });
 }
 
+function fetchBitgetTickers() {
+    return new Promise((resolve) => {
+        const options = { hostname: 'api.bitget.com', port: 443, path: '/api/v2/spot/market/tickers', method: 'GET' };
+        const externalReq = https.request(options, (apiRes) => {
+            let data = '';
+            apiRes.on('data', chunk => data += chunk);
+            apiRes.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    const map = {};
+                    if(parsed && parsed.data) {
+                        parsed.data.forEach(t => {
+                            if(t.symbol) map[t.symbol.toUpperCase()] = parseFloat(t.close || t.lastPr || 0);
+                        });
+                    }
+                    resolve(map);
+                } catch (e) { resolve({}); }
+            });
+        });
+        externalReq.on('error', () => { resolve({}); });
+        externalReq.end();
+    });
+}
+
 app.get('/api/bitget/markets', async (req, res) => {
     const options = { hostname: 'api.bitget.com', port: 443, path: '/api/v2/spot/market/tickers', method: 'GET' };
     const externalReq = https.request(options, (apiRes) => {
@@ -163,10 +187,31 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
             wallet = new Wallet({ uid, usdt_balance: 0.0 });
             await wallet.save();
         }
-        const holdings = await Holding.find({ uid });
+        const rawHoldings = await Holding.find({ uid });
         const trades = await Trade.find({ uid });
         const deposits = await Deposit.find({ uid });
         const withdrawals = await Withdrawal.find({ uid });
+
+        const tickers = await fetchBitgetTickers();
+        const USD_TO_PKR = 280; // Standard conversion rate for PKR
+
+        const holdings = rawHoldings.map(h => {
+            const currentPrice = tickers[h.symbol.toUpperCase()] || h.avg_price || 0;
+            const avgPrice = h.avg_price || 0;
+            const amount = h.amount || 0;
+            
+            const pnlUsdt = (currentPrice - avgPrice) * amount;
+            const pnlPkr = pnlUsdt * USD_TO_PKR;
+
+            return {
+                symbol: h.symbol,
+                amount: amount,
+                avgPrice: avgPrice,
+                currentPrice: currentPrice,
+                pnlUsdt: pnlUsdt,
+                pnlPkr: pnlPkr
+            };
+        });
 
         const totalDeposited = deposits.filter(d => d.status === 'Approved').reduce((acc, d) => acc + d.amount, 0);
         const totalWithdrawn = withdrawals.filter(w => w.status === 'Approved').reduce((acc, w) => acc + w.amount, 0);
