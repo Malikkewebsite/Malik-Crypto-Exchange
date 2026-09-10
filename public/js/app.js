@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     div.style.cssText = 'display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #2b313a; cursor: pointer; font-size: 12px;';
                     div.innerHTML = `<span><b>${m.symbol}</b></span> <span style="color: #0ecb81;">$${parseFloat(m.lastPr || 0).toFixed(4)}</span>`;
                     div.onclick = () => {
-                        currentPair = m.symbol;
+                        currentPair = m.symbol.toUpperCase().replace(/[\/_\\-]/g, '');
                         document.getElementById('selectedPairHeader').innerText = currentPair;
                         document.getElementById('tradingPairTitle').innerText = currentPair;
                     };
@@ -60,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`/api/user/portfolio/${uid}`);
             const data = await res.json();
             if (data.success) {
-                // If server returns 0 but we have local backup, sync it back
                 if (data.wallet.usdt_balance === 0 && localBalance > 0) {
                     await fetch('/api/user/sync', {
                         method: 'POST',
@@ -76,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
-                // Render Holdings (Updated with 5 columns matching HTML table structure)
+                // Render Holdings
                 const holdingsBody = document.getElementById('holdingsTableBody');
                 if (data.holdings && data.holdings.length > 0) {
                     holdingsBody.innerHTML = data.holdings.map(h => `
@@ -92,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
                 }
 
-                // Render Trades (Updated with 6 columns matching HTML table structure)
+                // Render Trades
                 const tradesBody = document.getElementById('tradesTableBody');
                 if (data.trades && data.trades.length > 0) {
                     tradesBody.innerHTML = data.trades.slice(-10).reverse().map(t => `
@@ -139,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(result.message);
             if (result.success) {
                 document.getElementById('tradeAmount').value = '';
-                loadUserData();
+                await loadUserData();
             }
         } catch (e) {
             console.error('Trade error', e);
@@ -166,7 +165,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('adminBtn').onclick = () => adminModal.style.display = 'flex';
     document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
 
-    // Auto-update WhatsApp link with dynamic UID and Balance
     function updateWhatsAppLink() {
         const balanceText = document.getElementById('userBalance').innerText;
         const message = `Hello Admin, I want to request a withdrawal.\nMy User ID: ${uid}\n${balanceText}`;
@@ -178,7 +176,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Submit Deposit Request
     document.getElementById('submitDeposit').onclick = async () => {
         const method = document.getElementById('depositMethod').value;
         const amount = parseFloat(document.getElementById('depositAmount').value);
@@ -204,7 +201,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Submit Withdraw Request
     document.getElementById('submitWithdraw').onclick = async () => {
         const address = document.getElementById('withdrawAddress').value;
         const amount = parseFloat(document.getElementById('withdrawAmount').value);
@@ -229,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Admin Login & Management
     document.getElementById('adminLoginBtn').onclick = async () => {
         const password = document.getElementById('adminPasswordInput').value;
         const res = await fetch('/api/admin/data', {
