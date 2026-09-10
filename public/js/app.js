@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('uid', uid);
     }
 
+    // Fixed: Always default to 0 on new devices to prevent unwanted balance like $200
     let localBalance = parseFloat(localStorage.getItem('crypto_balance') || '0');
 
     fetch('/api/user/init', {
@@ -30,7 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.success && data.markets) {
                 const container = document.getElementById('marketListContainer');
-                const search = document.getElementById('marketSearch').value.toUpperCase();
+                const searchInputElem = document.getElementById('marketSearch');
+                const search = searchInputElem ? searchInputElem.value.toUpperCase() : '';
                 
                 container.innerHTML = '';
                 data.markets.filter(m => m.symbol.includes(search)).forEach(m => {
@@ -86,50 +88,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(`/api/user/portfolio/${uid}`);
             const data = await res.json();
             if (data.success) {
-                if (data.wallet.usdt_balance === 0 && localBalance > 0) {
-                    await fetch('/api/user/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ uid, balance: localBalance })
-                    });
-                    data.wallet.usdt_balance = localBalance;
-                } else {
-                    localBalance = data.wallet.usdt_balance;
-                    localStorage.setItem('crypto_balance', localBalance);
-                }
+                localBalance = data.wallet.usdt_balance;
+                localStorage.setItem('crypto_balance', localBalance);
 
                 document.getElementById('userBalance').innerText = 'USDT Balance: $' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
-                const holdingsBody = document.getElementById('holdingsTableBody');
-                if (data.holdings && data.holdings.length > 0) {
-                    holdingsBody.innerHTML = data.holdings.map(h => `
-                        <tr>
-                            <td><b>${h.symbol}</b></td>
-                            <td>${h.amount.toFixed(4)}</td>
-                            <td>$${h.avgPrice.toFixed(2)}</td>
-                            <td style="color:${h.pnlUsdt >= 0 ? '#0ecb81' : '#f6465d'}">$${h.pnlUsdt.toFixed(2)}</td>
-                            <td style="color:${h.pnlPkr >= 0 ? '#0ecb81' : '#f6465d'}">Rs ${h.pnlPkr.toFixed(2)}</td>
-                        </tr>
-                    `).join('');
-                } else {
-                    holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
-                }
-
+                // Fixed: Properly map and display trades history in the history modal table
                 const historyBody = document.getElementById('historyTableBody');
-                if (data.trades && data.trades.length > 0) {
-                    historyBody.innerHTML = data.trades.slice(-20).reverse().map(t => `
+                if (historyBody && data.trades && data.trades.length > 0) {
+                    historyBody.innerHTML = data.trades.map(t => `
                         <tr>
                             <td><b>${t.symbol || '-'}</b></td>
                             <td style="color:${t.side === 'BUY' ? '#0ecb81' : '#f6465d'}">${t.side}</td>
-                            <td>$${t.price.toFixed(2)}</td>
-                            <td>${t.amount.toFixed(4)}</td>
-                            <td>$${t.fee.toFixed(2)}</td>
-                            <td><b>${t.status}</b></td>
+                            <td>$${(t.price || 0).toFixed(2)}</td>
+                            <td>${(t.amount || 0).toFixed(4)}</td>
+                            <td>$${(t.fee || 0).toFixed(2)}</td>
+                            <td><b>${t.status || 'Running'}</b></td>
                         </tr>
                     `).join('');
-                } else {
-                    historyBody.innerHTML = `<tr><td colspan="6">No history found</td></tr>`;
+                } else if (historyBody) {
+                    historyBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 15px;">No history found</td></tr>`;
                 }
             }
         } catch (e) {
@@ -166,31 +145,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    document.getElementById('buyBtn').onclick = () => executeTrade('BUY');
-    document.getElementById('sellBtn').onclick = () => executeTrade('SELL');
+    const buyBtn = document.getElementById('buyBtn');
+    if(buyBtn) buyBtn.onclick = () => executeTrade('BUY');
+    const sellBtn = document.getElementById('sellBtn');
+    if(sellBtn) sellBtn.onclick = () => executeTrade('SELL');
 
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
     const historyModal = document.getElementById('historyModal');
     const adminModal = document.getElementById('adminModal');
 
-    document.getElementById('depositBtn').onclick = () => depositModal.style.display = 'flex';
-    document.getElementById('closeDeposit').onclick = () => depositModal.style.display = 'none';
+    const depositBtn = document.getElementById('depositBtn');
+    if(depositBtn) depositBtn.onclick = () => depositModal.style.display = 'flex';
+    const closeDeposit = document.getElementById('closeDeposit');
+    if(closeDeposit) closeDeposit.onclick = () => depositModal.style.display = 'none';
 
-    document.getElementById('withdrawBtn').onclick = () => {
-        withdrawModal.style.display = 'flex';
-        updateWhatsAppLink();
-    };
-    document.getElementById('closeWithdraw').onclick = () => withdrawModal.style.display = 'none';
+    const withdrawBtn = document.getElementById('withdrawBtn');
+    if(withdrawBtn) {
+        withdrawBtn.onclick = () => {
+            withdrawModal.style.display = 'flex';
+            updateWhatsAppLink();
+        };
+    }
+    const closeWithdraw = document.getElementById('closeWithdraw');
+    if(closeWithdraw) closeWithdraw.onclick = () => withdrawModal.style.display = 'none';
 
-    document.getElementById('historyBtn').onclick = () => {
-        historyModal.style.display = 'flex';
-        loadUserData();
-    };
-    document.getElementById('closeHistory').onclick = () => historyModal.style.display = 'none';
+    const historyBtn = document.getElementById('historyBtn');
+    if(historyBtn) {
+        historyBtn.onclick = () => {
+            historyModal.style.display = 'flex';
+            loadUserData();
+        };
+    }
+    const closeHistory = document.getElementById('closeHistory');
+    if(closeHistory) closeHistory.onclick = () => historyModal.style.display = 'none';
 
-    document.getElementById('adminBtn').onclick = () => adminModal.style.display = 'flex';
-    document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
+    const adminBtn = document.getElementById('adminBtn');
+    if(adminBtn) adminBtn.onclick = () => adminModal.style.display = 'flex';
+    const closeAdmin = document.getElementById('closeAdmin');
+    if(closeAdmin) closeAdmin.onclick = () => adminModal.style.display = 'none';
 
     function updateWhatsAppLink() {
         const balanceText = document.getElementById('userBalance').innerText;
@@ -203,96 +196,105 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    document.getElementById('submitDeposit').onclick = async () => {
-        const method = document.getElementById('depositMethod').value;
-        const amount = parseFloat(document.getElementById('depositAmount').value);
-        const details = document.getElementById('depositDetails').value;
+    const submitDeposit = document.getElementById('submitDeposit');
+    if(submitDeposit) {
+        submitDeposit.onclick = async () => {
+            const method = document.getElementById('depositMethod').value;
+            const amount = parseFloat(document.getElementById('depositAmount').value);
+            const details = document.getElementById('depositDetails').value;
 
-        if (!amount || amount <= 0) {
-            alert('Enter valid deposit amount');
-            return;
-        }
-
-        const res = await fetch('/api/deposit/request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid, method, amount, details })
-        });
-        const r = await res.json();
-        alert(r.message);
-        if (r.success) {
-            depositModal.style.display = 'none';
-            document.getElementById('depositAmount').value = '';
-            document.getElementById('depositDetails').value = '';
-            loadUserData();
-        }
-    };
-
-    document.getElementById('submitWithdraw').onclick = async () => {
-        const address = document.getElementById('withdrawAddress').value;
-        const amount = parseFloat(document.getElementById('withdrawAmount').value);
-
-        if (!address || !amount || amount <= 0) {
-            alert('Enter valid withdrawal details');
-            return;
-        }
-
-        const res = await fetch('/api/withdraw/request', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uid, address, amount })
-        });
-        const r = await res.json();
-        alert(r.message);
-        if (r.success) {
-            withdrawModal.style.display = 'none';
-            document.getElementById('withdrawAddress').value = '';
-            document.getElementById('withdrawAmount').value = '';
-            loadUserData();
-        }
-    };
-
-    document.getElementById('adminLoginBtn').onclick = async () => {
-        const password = document.getElementById('adminPasswordInput').value;
-        const res = await fetch('/api/admin/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
-        });
-        const data = await res.json();
-        if (data.success) {
-            document.getElementById('adminLoginBox').style.display = 'none';
-            document.getElementById('adminDashboardContent').style.display = 'block';
-            document.getElementById('adminProfit').innerText = data.admin_profit.toFixed(2);
-
-            const tbody = document.getElementById('adminRequestsBody');
-            let allReqs = [];
-            data.deposits.forEach(d => allReqs.push({ ...d, reqType: 'deposit' }));
-            data.withdrawals.forEach(w => allReqs.push({ ...w, reqType: 'withdrawal' }));
-
-            if (allReqs.length > 0) {
-                tbody.innerHTML = allReqs.map(r => `
-                    <tr>
-                        <td>${r.reqType.toUpperCase()}</td>
-                        <td>${r.uid}</td>
-                        <td>$${r.amount}</td>
-                        <td>${r.details || r.address || '-'}</td>
-                        <td><b>${r.status}</b></td>
-                        <td>
-                            ${r.status === 'Pending' ? `
-                                <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Approved', '${password}')" style="background:#0ecb81; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Approve</button>
-                                <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Rejected', '${password}')" style="background:#f6465d; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Reject</button>
-                            ` : r.status}
-                        </td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = `<tr><td colspan="6">No requests found</td></tr>`;
+            if (!amount || amount <= 0) {
+                alert('Enter valid deposit amount');
+                return;
             }
-        } else {
-            alert(data.message);
-        }
-    };
+
+            const res = await fetch('/api/deposit/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, method, amount, details })
+            });
+            const r = await res.json();
+            alert(r.message);
+            if (r.success) {
+                depositModal.style.display = 'none';
+                document.getElementById('depositAmount').value = '';
+                document.getElementById('depositDetails').value = '';
+                loadUserData();
+            }
+        };
+    }
+
+    const submitWithdraw = document.getElementById('submitWithdraw');
+    if(submitWithdraw) {
+        submitWithdraw.onclick = async () => {
+            const address = document.getElementById('withdrawAddress').value;
+            const amount = parseFloat(document.getElementById('withdrawAmount').value);
+
+            if (!address || !amount || amount <= 0) {
+                alert('Enter valid withdrawal details');
+                return;
+            }
+
+            const res = await fetch('/api/withdraw/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, address, amount })
+            });
+            const r = await res.json();
+            alert(r.message);
+            if (r.success) {
+                withdrawModal.style.display = 'none';
+                document.getElementById('withdrawAddress').value = '';
+                document.getElementById('withdrawAmount').value = '';
+                loadUserData();
+            }
+        };
+    }
+
+    const adminLoginBtn = document.getElementById('adminLoginBtn');
+    if(adminLoginBtn) {
+        adminLoginBtn.onclick = async () => {
+            const password = document.getElementById('adminPasswordInput').value;
+            const res = await fetch('/api/admin/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('adminLoginBox').style.display = 'none';
+                document.getElementById('adminDashboardContent').style.display = 'block';
+                document.getElementById('adminProfit').innerText = data.admin_profit.toFixed(2);
+
+                const tbody = document.getElementById('adminRequestsBody');
+                let allReqs = [];
+                data.deposits.forEach(d => allReqs.push({ ...d, reqType: 'deposit' }));
+                data.withdrawals.forEach(w => allReqs.push({ ...w, reqType: 'withdrawal' }));
+
+                if (allReqs.length > 0) {
+                    tbody.innerHTML = allReqs.map(r => `
+                        <tr>
+                            <td>${r.reqType.toUpperCase()}</td>
+                            <td>${r.uid}</td>
+                            <td>$${r.amount}</td>
+                            <td>${r.details || r.address || '-'}</td>
+                            <td><b>${r.status}</b></td>
+                            <td>
+                                ${r.status === 'Pending' ? `
+                                    <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Approved', '${password}')" style="background:#0ecb81; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Approve</button>
+                                    <button onclick="handleAdminAction('${r.reqType}', '${r.id}', 'Rejected', '${password}')" style="background:#f6465d; color:#fff; border:none; padding:4px 8px; cursor:pointer; border-radius:3px;">Reject</button>
+                                ` : r.status}
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="6">No requests found</td></tr>`;
+                }
+            } else {
+                alert(data.message);
+            }
+        };
+    }
 });
 
 window.handleAdminAction = async function(type, id, status, password) {
@@ -304,6 +306,7 @@ window.handleAdminAction = async function(type, id, status, password) {
     const r = await res.json();
     alert(r.message);
     if (r.success) {
-        document.getElementById('adminBtn').click();
+        const adminBtnElem = document.getElementById('adminBtn');
+        if(adminBtnElem) adminBtnElem.click();
     }
 };
