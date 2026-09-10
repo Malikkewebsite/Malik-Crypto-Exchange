@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fee = amountVal * 0.02;
         const effectiveUSDT = amountVal - fee;
         const exactCoinQty = effectiveUSDT / currentPrice;
-        previewEl.innerText = `Fee: $${fee.toFixed(2)} | Net Buy Qty: ${exactCoinQty.toFixed(4)} ${currentPair}`;
+        previewEl.innerText = `Fee: $${fee.toFixed(2)} | Net Qty: ${exactCoinQty.toFixed(4)} ${currentPair}`;
     }
 
     async function loadUserData() {
@@ -130,10 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     `).join('');
                 } else {
                     historyBody.innerHTML = `<tr><td colspan="6">No history found</td></tr>`;
-                }
-
-                if (data.stats) {
-                    document.getElementById('userStatsSummary').innerHTML = `Total Deposited: $${data.stats.totalDeposited.toFixed(2)} | Withdrawn: $${data.stats.totalWithdrawn.toFixed(2)} | Net P&L: $${data.stats.netProfitLoss.toFixed(2)}`;
                 }
             }
         } catch (e) {
@@ -201,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = `Hello Admin, I want to request a withdrawal.\nMy User ID: ${uid}\n${balanceText}`;
         const encodedMsg = encodeURIComponent(message);
         
-        const waLink = withdrawModal.querySelector('a[href*="wa.me"]');
+        const waLink = document.getElementById('whatsappContactLink');
         if(waLink) {
             waLink.href = `https://wa.me/923125124424?text=${encodedMsg}`;
         }
