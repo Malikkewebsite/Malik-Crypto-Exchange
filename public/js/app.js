@@ -101,7 +101,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('userBalance').innerText = 'USDT Balance: $' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
-                // Render Holdings
                 const holdingsBody = document.getElementById('holdingsTableBody');
                 if (data.holdings && data.holdings.length > 0) {
                     holdingsBody.innerHTML = data.holdings.map(h => `
@@ -117,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
                 }
 
-                // Render History Modal Trades
                 const historyBody = document.getElementById('historyTableBody');
                 if (data.trades && data.trades.length > 0) {
                     historyBody.innerHTML = data.trades.slice(-20).reverse().map(t => `
@@ -175,7 +173,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('buyBtn').onclick = () => executeTrade('BUY');
     document.getElementById('sellBtn').onclick = () => executeTrade('SELL');
 
-    // Modals Handling
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
     const historyModal = document.getElementById('historyModal');
