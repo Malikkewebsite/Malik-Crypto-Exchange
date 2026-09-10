@@ -55,7 +55,6 @@ const Config = mongoose.models.Config || mongoose.model('Config', ConfigSchema);
 const MaintenanceSchema = new mongoose.Schema({ key: { type: String, unique: true }, enabled: Boolean });
 const Maintenance = mongoose.models.Maintenance || mongoose.model('Maintenance', MaintenanceSchema);
 
-// Maintenance Mode Middleware Check
 app.use(async (req, res, next) => {
     try {
         await connectDB();
@@ -67,7 +66,6 @@ app.use(async (req, res, next) => {
     next();
 });
 
-// Bitget API Credentials
 const BITGET_API_KEY = process.env.BITGET_API_KEY || 'bg_c548d9fda732eceb14ee1b8607d63f8';
 const BITGET_SECRET_KEY = process.env.BITGET_SECRET_KEY || '78a0c22d32bce51efe378cfcc608a5f1007f007fe9d833758e93586464b5c600d855';
 const BITGET_PASSPHRASE = process.env.BITGET_PASSPHRASE || 'Mmooossaa35';
@@ -77,9 +75,10 @@ function executeBitgetRealOrder(symbol, side, size) {
         const timestamp = Date.now().toString();
         const method = 'POST';
         const requestPath = '/api/v2/spot/trade/place-order';
+        const cleanSymbol = symbol.toUpperCase().replace(/[\/_\\-]/g, '');
         
         const bodyObj = {
-            symbol: symbol.toUpperCase(),
+            symbol: cleanSymbol,
             productType: 'spot',
             side: side.toLowerCase() === 'buy' ? 'buy' : 'sell',
             orderType: 'market',
@@ -131,7 +130,7 @@ function fetchBitgetTickers() {
                     if(parsed && parsed.data) {
                         parsed.data.forEach(t => {
                             if(t.symbol) {
-                                const cleanSym = t.symbol.toUpperCase().replace(/[\/_]/g, '');
+                                const cleanSym = t.symbol.toUpperCase().replace(/[\/_\\-]/g, '');
                                 map[cleanSym] = parseFloat(t.close || t.lastPr || 0);
                             }
                         });
@@ -209,7 +208,7 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
         const USD_TO_PKR = 280;
 
         const holdings = rawHoldings.map(h => {
-            const sym = h.symbol ? h.symbol.toUpperCase().replace(/[\/_]/g, '') : '';
+            const sym = h.symbol ? h.symbol.toUpperCase().replace(/[\/_\\-]/g, '') : '';
             const liveMarketPrice = tickers[sym] || 0;
             const avgPrice = h.avg_price || 0;
             const currentPrice = liveMarketPrice > 0 ? liveMarketPrice : avgPrice;
@@ -247,11 +246,11 @@ app.post('/api/trade/execute', async (req, res) => {
 
         const tradeAmountUSDT = parseFloat(amount);
         let currentPrice = parseFloat(price) || 0;
+        const cleanSymbol = symbol ? symbol.toUpperCase().replace(/[\/_\\-]/g, '') : '';
 
         if (currentPrice <= 0) {
             const tickers = await fetchBitgetTickers();
-            const cleanSym = symbol ? symbol.toUpperCase().replace(/[\/_]/g, '') : '';
-            currentPrice = tickers[cleanSym] || 0;
+            currentPrice = tickers[cleanSymbol] || 0;
         }
 
         if (currentPrice <= 0) {
@@ -274,9 +273,9 @@ app.post('/api/trade/execute', async (req, res) => {
             wallet.usdt_balance -= tradeAmountUSDT;
             await wallet.save();
             
-            let holding = await Holding.findOne({ uid, symbol });
+            let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
             if (!holding) {
-                holding = new Holding({ uid, symbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
+                holding = new Holding({ uid, symbol: cleanSymbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
             } else {
                 const totalCost = (holding.amount * (holding.avg_price || currentPrice)) + effectiveAmountUSDT;
                 holding.amount += coinQuantityToAddOrSub;
@@ -287,7 +286,7 @@ app.post('/api/trade/execute', async (req, res) => {
         } else {
             coinQuantityToAddOrSub = tradeAmountUSDT / currentPrice;
 
-            let holding = await Holding.findOne({ uid, symbol });
+            let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
             if (!holding || holding.amount < coinQuantityToAddOrSub) {
                 return res.json({ success: false, message: 'Insufficient holding quantity of this coin to sell!' });
             }
@@ -295,21 +294,22 @@ app.post('/api/trade/execute', async (req, res) => {
             holding.amount -= coinQuantityToAddOrSub;
             if (holding.amount < 0.00000001) {
                 holding.amount = 0;
-                await Trade.updateMany({ uid, symbol, status: 'Running' }, { status: 'Closed' });
+                await Holding.deleteOne({ _id: holding._id });
+            } else {
+                await holding.save();
             }
-            await holding.save();
 
             wallet.usdt_balance += effectiveAmountUSDT;
             await wallet.save();
             bitgetSize = coinQuantityToAddOrSub; 
         }
 
-        executeBitgetRealOrder(symbol, side, bitgetSize).catch(() => {});
+        executeBitgetRealOrder(cleanSymbol, side, bitgetSize).catch(() => {});
 
         const newTrade = new Trade({
             id: 'TRD_' + Date.now(), 
             uid, 
-            symbol, 
+            symbol: cleanSymbol, 
             side: side.toUpperCase(), 
             price: currentPrice, 
             amount: side.toUpperCase() === 'BUY' ? effectiveAmountUSDT : tradeAmountUSDT, 
@@ -318,6 +318,11 @@ app.post('/api/trade/execute', async (req, res) => {
             timestamp: new Date().toISOString()
         });
         await newTrade.save();
+
+        if (side.toUpperCase() === 'SELL') {
+            // Mark older running trades as closed if fully sold
+            await Trade.updateMany({ uid, symbol: cleanSymbol, status: 'Running' }, { status: 'Closed' });
+        }
 
         let adminConfig = await Config.findOne({ key: 'admin_fees' });
         if (!adminConfig) {
