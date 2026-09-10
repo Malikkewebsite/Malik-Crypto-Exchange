@@ -4,6 +4,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -124,9 +125,14 @@ function executeBitgetRealOrder(symbol, side, amount) {
     });
 }
 
-// Homepage Route (Sirf index.html serve karega taake website properly show ho)
+// Homepage Route (Checks index.html safely)
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    const indexPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.send('Malik Crypto Exchange Backend Server is Running! ✅ (index.html not found in root)');
+    }
 });
 
 // Trade Execute Endpoint
