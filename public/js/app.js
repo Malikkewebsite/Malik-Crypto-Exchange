@@ -91,12 +91,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
                 }
 
-                // Render Trades
+                // Render Trades (Coin Name displayed instead of ID)
                 const tradesBody = document.getElementById('tradesTableBody');
                 if (data.trades && data.trades.length > 0) {
                     tradesBody.innerHTML = data.trades.slice(-10).reverse().map(t => `
                         <tr>
-                            <td>${t.id}</td>
+                            <td><b>${t.symbol || '-'}</b></td>
                             <td style="color:${t.side === 'BUY' ? '#0ecb81' : '#f6465d'}">${t.side}</td>
                             <td>$${t.price.toFixed(2)}</td>
                             <td>${t.amount.toFixed(4)}</td>
