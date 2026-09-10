@@ -76,8 +76,6 @@ function executeBitgetRealOrder(symbol, side, size) {
         const method = 'POST';
         const requestPath = '/api/v2/spot/trade/place-order';
         const cleanSymbol = symbol.toUpperCase().replace(/[\/_\\-]/g, '');
-        
-        // Ensure correct side mapping for Bitget API ('buy' or 'sell')
         const orderSide = side.toLowerCase() === 'sell' ? 'sell' : 'buy';
 
         const bodyObj = {
@@ -291,7 +289,6 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await holding.save();
 
-            // Try executing on exchange, catch error and report if needed
             try {
                 await executeBitgetRealOrder(cleanSymbol, tradeSide, effectiveAmountUSDT);
             } catch (exchangeErr) {
@@ -322,7 +319,6 @@ app.post('/api/trade/execute', async (req, res) => {
             return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
 
         } else {
-            // SELL
             const coinQuantityToSell = parseFloat(amount);
 
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
@@ -345,7 +341,6 @@ app.post('/api/trade/execute', async (req, res) => {
             wallet.usdt_balance += netReturnUSDT;
             await wallet.save();
 
-            // Try executing on exchange, catch error and report via popup message if exchange rejects
             try {
                 await executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell);
             } catch (exchangeErr) {
@@ -456,7 +451,7 @@ app.post('/api/admin/system-action', async (req, res) => {
         if (action === 'adjust_balance') {
             let wallet = await Wallet.findOne({ uid: targetUid });
             if (!wallet) return res.json({ success: false, message: 'Owner wallet not found' });
-            wallet.usdst_balance = parseFloat(newBalance);
+            wallet.usdt_balance = parseFloat(newBalance);
             await wallet.save();
             return res.json({ success: true, message: 'User balance updated successfully!' });
         }
