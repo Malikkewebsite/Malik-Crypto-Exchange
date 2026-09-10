@@ -76,21 +76,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
-                // Render Holdings
+                // Render Holdings (Updated with 5 columns matching HTML table structure)
                 const holdingsBody = document.getElementById('holdingsTableBody');
                 if (data.holdings && data.holdings.length > 0) {
                     holdingsBody.innerHTML = data.holdings.map(h => `
                         <tr>
                             <td>${h.symbol}</td>
                             <td>${h.amount.toFixed(4)}</td>
-                            <td>$${h.avg_price.toFixed(2)}</td>
+                            <td>$${h.avgPrice.toFixed(2)}</td>
+                            <td style="color:${h.pnlUsdt >= 0 ? '#0ecb81' : '#f6465d'}">$${h.pnlUsdt.toFixed(2)}</td>
+                            <td style="color:${h.pnlPkr >= 0 ? '#0ecb81' : '#f6465d'}">Rs ${h.pnlPkr.toFixed(2)}</td>
                         </tr>
                     `).join('');
                 } else {
-                    holdingsBody.innerHTML = `<tr><td colspan="3">No holdings found</td></tr>`;
+                    holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
                 }
 
-                // Render Trades
+                // Render Trades (Updated with 6 columns matching HTML table structure)
                 const tradesBody = document.getElementById('tradesTableBody');
                 if (data.trades && data.trades.length > 0) {
                     tradesBody.innerHTML = data.trades.slice(-10).reverse().map(t => `
@@ -100,10 +102,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td>$${t.price.toFixed(2)}</td>
                             <td>${t.amount.toFixed(4)}</td>
                             <td>$${t.fee.toFixed(2)}</td>
+                            <td><b>${t.status}</b></td>
                         </tr>
                     `).join('');
                 } else {
-                    tradesBody.innerHTML = `<tr><td colspan="5">No trades found</td></tr>`;
+                    tradesBody.innerHTML = `<tr><td colspan="6">No trades found</td></tr>`;
                 }
 
                 if (data.stats) {
