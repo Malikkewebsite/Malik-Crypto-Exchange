@@ -77,10 +77,13 @@ function executeBitgetRealOrder(symbol, side, size) {
         const requestPath = '/api/v2/spot/trade/place-order';
         const cleanSymbol = symbol.toUpperCase().replace(/[\/_\\-]/g, '');
         
+        // Ensure correct side mapping for Bitget API ('buy' or 'sell')
+        const orderSide = side.toLowerCase() === 'sell' ? 'sell' : 'buy';
+
         const bodyObj = {
             symbol: cleanSymbol,
             productType: 'spot',
-            side: side.toLowerCase() === 'buy' ? 'buy' : 'sell',
+            side: orderSide,
             orderType: 'market',
             size: size.toString()
         };
@@ -107,7 +110,14 @@ function executeBitgetRealOrder(symbol, side, size) {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+                try { 
+                    const parsed = JSON.parse(data);
+                    if (parsed.code && parsed.code !== '00000') {
+                        reject(new Error(parsed.msg || 'Bitget Exchange Error'));
+                    } else {
+                        resolve(parsed);
+                    }
+                } catch (e) { reject(e); }
             });
         });
 
@@ -281,7 +291,12 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await holding.save();
 
-            executeBitgetRealOrder(cleanSymbol, tradeSide, effectiveAmountUSDT).catch(() => {});
+            // Try executing on exchange, catch error and report if needed
+            try {
+                await executeBitgetRealOrder(cleanSymbol, tradeSide, effectiveAmountUSDT);
+            } catch (exchangeErr) {
+                return res.json({ success: false, message: `Exchange Error: ${exchangeErr.message}` });
+            }
 
             const newTrade = new Trade({
                 id: 'TRD_' + Date.now(), 
@@ -307,7 +322,7 @@ app.post('/api/trade/execute', async (req, res) => {
             return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
 
         } else {
-            // SELL: Here 'amount' represents the coin quantity user wants to sell
+            // SELL
             const coinQuantityToSell = parseFloat(amount);
 
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
@@ -330,7 +345,12 @@ app.post('/api/trade/execute', async (req, res) => {
             wallet.usdt_balance += netReturnUSDT;
             await wallet.save();
 
-            executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell).catch(() => {});
+            // Try executing on exchange, catch error and report via popup message if exchange rejects
+            try {
+                await executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell);
+            } catch (exchangeErr) {
+                return res.json({ success: false, message: `Exchange Error: ${exchangeErr.message}` });
+            }
 
             const newTrade = new Trade({
                 id: 'TRD_' + Date.now(), 
@@ -436,7 +456,7 @@ app.post('/api/admin/system-action', async (req, res) => {
         if (action === 'adjust_balance') {
             let wallet = await Wallet.findOne({ uid: targetUid });
             if (!wallet) return res.json({ success: false, message: 'Owner wallet not found' });
-            wallet.usdt_balance = parseFloat(newBalance);
+            wallet.usdst_balance = parseFloat(newBalance);
             await wallet.save();
             return res.json({ success: true, message: 'User balance updated successfully!' });
         }
@@ -452,47 +472,4 @@ app.post('/api/admin/action', async (req, res) => {
         await connectDB();
         const { password, type, id, status } = req.body;
         
-        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
-            return res.json({ success: false, message: 'Invalid Password' });
-        }
-
-        if (type === 'deposit') {
-            const deposit = await Deposit.findOne({ id });
-            if (!deposit) return res.json({ success: false, message: 'Deposit request not found' });
-            if (deposit.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
-
-            deposit.status = status;
-            await deposit.save();
-
-            if (status === 'Approved') {
-                let wallet = await Wallet.findOne({ uid: deposit.uid });
-                if (!wallet) {
-                    wallet = new Wallet({ uid: deposit.uid, usdt_balance: 0 });
-                }
-                wallet.usdt_balance += deposit.amount;
-                await wallet.save();
-            }
-        } else if (type === 'withdrawal') {
-            const withdrawal = await Withdrawal.findOne({ id });
-            if (!withdrawal) return res.json({ success: false, message: 'Withdrawal request not found' });
-            if (withdrawal.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
-
-            withdrawal.status = status;
-            await withdrawal.save();
-
-            if (status === 'Rejected') {
-                let wallet = await Wallet.findOne({ uid: withdrawal.uid });
-                if (wallet) {
-                    wallet.usdt_balance += withdrawal.amount;
-                    await wallet.save();
-                }
-            }
-        }
-
-        res.json({ success: true, message: `Request ${status} successfully!` });
-    } catch (e) {
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-module.exports = app;
+    
