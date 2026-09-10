@@ -3,246 +3,165 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Malik Crypto Exchange</title>
+    <title>Crypto Trading Platform</title>
     <link rel="stylesheet" href="/css/style.css">
+    <style>
+        body { background-color: #121212; color: #ffffff; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        header { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #1e2329; border-bottom: 1px sold #2b313a; }
+        .main-container { display: flex; flex-wrap: wrap; padding: 10px; gap: 10px; }
+        .box { background: #1e2329; border-radius: 5px; padding: 15px; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #2b313a; }
+        th { color: #848e9c; }
+        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-buy { background: #0ecb81; color: #fff; width: 48%; }
+        .btn-sell { background: #f6465d; color: #fff; width: 48%; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #1e2329; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; }
+        input, select { width: 100%; padding: 8px; margin: 8px 0; background: #121212; border: 1px solid #2b313a; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #1e2329; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #2b313a; z-index: 900; }
+        .bottom-nav button { background: none; border: none; color: #fff; cursor: pointer; font-size: 14px; font-weight: bold; }
+    </style>
 </head>
 <body>
 
-    <div class="exchange-container">
-        <div class="header">
-            <div class="header-top">
-                <div>
-                    <div class="logo">⚡ Malik Crypto Exchange</div>
-                    <div class="user-info" id="userUid">UID: Loading...</div>
-                </div>
-                <div class="balance-display" id="userBalance">USDT Balance: 0.00</div>
-            </div>
-            <div class="header-actions">
-                <button id="depositBtn">Deposit</button>
-                <button id="withdrawBtn">Withdraw</button>
-                <button id="adminBtn">Admin Panel</button>
+    <header>
+        <div>
+            <h3 id="selectedPairHeader" style="margin: 0;">BTCUSDT</h3>
+            <span id="userUid" style="font-size: 11px; color: #848e9c;">UID: Loading...</span>
+        </div>
+        <div>
+            <span id="userBalance" style="font-weight: bold; color: #0ecb81;">USDT Balance: $0.00</span>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="box" style="width: 100%; max-height: 200px; overflow-y: auto;">
+            <input type="text" id="marketSearch" placeholder="Search Coin (e.g. BTC, ETH)">
+            <div id="marketListContainer"></div>
+        </div>
+
+        <div class="box" style="width: 100%;">
+            <h4 id="tradingPairTitle" style="margin-top: 0;">BTCUSDT Trading</h4>
+            <select id="orderType">
+                <option value="market">Market Order</option>
+                <option value="limit">Limit Order</option>
+            </select>
+            <input type="number" id="limitPrice" placeholder="Limit Price (if limit order)" style="display:none;">
+            <input type="number" id="tradeAmount" placeholder="Amount in USDT">
+            <div id="exactCalculationPreview" style="font-size: 12px; color: #848e9c; margin-bottom: 8px;"></div>
+            <div style="display: flex; justify-content: space-between;">
+                <button class="btn btn-buy" id="buyBtn">BUY / LONG</button>
+                <button class="btn btn-sell" id="sellBtn">SELL / SHORT</button>
             </div>
         </div>
 
-        <div id="toastNotification"></div>
-
-        <div class="trading-layout">
-            <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 6px;">Bitget Spot Markets &nbsp; <span id="selectedPairHeader" style="color:#f0b90b;">BTCUSDT</span></h3>
-                <input type="text" id="marketSearch" class="market-search" placeholder="Search coin (e.g. ETH, XRP, BTC)...">
-                <div class="market-section" id="marketListContainer">
-                    <div style="padding: 10px; text-align:center; color:#848e9c;">Loading Bitget markets...</div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 8px;">Spot Trading &nbsp; (<span id="tradingPairTitle" style="color:#f0b90b;">BTCUSDT</span>)</h3>
-                <div class="trade-form">
-                    <div class="form-group">
-                        <label>Order Type</label>
-                        <select id="orderType">
-                            <option value="Market">Market Order</option>
-                            <option value="Limit">Limit Order</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="limitPriceGroup" style="display: none;">
-                        <label>Limit Price</label>
-                        <input type="number" id="limitPrice" placeholder="0.00">
-                    </div>
-                    <div class="form-group">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label>Amount (2% Fee applies)</label>
-                            <button type="button" id="maxHoldingsBtn" style="background: #f0b90b; border: none; padding: 2px 8px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 11px; color: #000;">MAX</button>
-                        </div>
-                        <input type="number" id="tradeAmount" placeholder="0.00">
-                    </div>
-                    <div class="trade-buttons">
-                        <button class="btn-buy" id="buyBtn">BUY / LONG</button>
-                        <button class="btn-sell" id="sellBtn">SELL / SHORT</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 6px;">My Holdings & P&L Summary</h3>
-                <div id="userStatsSummary" style="font-size: 12px; background: #1e2329; padding: 8px; border-radius: 4px; margin-bottom: 8px; color: #d1d5db;">
-                    Total Deposited: $0.00 | Withdrawn: $0.00 | Net P&L: $0.00
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Symbol</th>
-                                <th>Amount</th>
-                                <th>Avg Price</th>
-                                <th>P&L (USDT)</th>
-                                <th>P&L (PKR)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="holdingsTableBody">
-                            <tr><td colspan="5">No holdings found</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="font-size: 14px; margin-bottom: 6px;">Recent Trades (Incl. 2% Fee)</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Side</th>
-                                <th>Price</th>
-                                <th>Amount</th>
-                                <th>Fee (2%)</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tradesTableBody">
-                            <tr><td colspan="6">No trades found</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="box" style="width: 100%; overflow-x: auto;">
+            <h4 style="margin-top: 0;">My Holdings & P&L Summary</h4>
+            <div id="userStatsSummary" style="font-size: 12px; color: #848e9c; margin-bottom: 10px;">Total Deposited: $0.00 | Withdrawn: $0.00 | Net P&L: $0.00</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Amount</th>
+                        <th>Avg Price</th>
+                        <th>P&L (USDT)</th>
+                        <th>P&L (PKR)</th>
+                    </tr>
+                </thead>
+                <tbody id="holdingsTableBody">
+                    <tr><td colspan="5">No holdings found</td></tr>
+                </tbody>
+            </table>
         </div>
+    </div>
+
+    <div class="bottom-nav">
+        <button id="depositBtn">Deposit</button>
+        <button id="withdrawBtn">Withdraw</button>
+        <button id="historyBtn">History</button>
+        <button id="adminBtn">Admin</button>
     </div>
 
     <div class="modal" id="depositModal">
         <div class="modal-content">
             <h3>Deposit USDT</h3>
-            <div class="form-group">
-                <label>Method</label>
-                <select id="depositMethod">
-                    <option value="USDT TRC20">USDT TRC20</option>
-                    <option value="USDT BEP20">USDT BEP20</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Amount (USDT)</label>
-                <input type="number" id="depositAmount" placeholder="Enter amount">
-            </div>
-            <div class="form-group">
-                <label>Txn Hash / Details</label>
-                <input type="text" id="depositDetails" placeholder="Transaction ID / Name">
-            </div>
-            <div style="display: flex; gap: 8px; margin-top: 5px;">
-                <button id="submitDeposit" style="background:#0ecb81; border:none; padding:8px; flex:1; font-weight:bold; border-radius:4px; cursor:pointer;">Submit</button>
-                <button id="closeDeposit" style="background:#2b313a; color:#fff; border:none; padding:8px; flex:1; border-radius:4px; cursor:pointer;">Cancel</button>
-            </div>
+            <select id="depositMethod">
+                <option value="USDT TRC20">USDT TRC20</option>
+                <option value="Binance Pay">Binance Pay ID</option>
+                <option value="Easypaisa">Easypaisa</option>
+                <option value="JazzCash">JazzCash</option>
+            </select>
+            <input type="number" id="depositAmount" placeholder="Enter Amount ($)">
+            <input type="text" id="depositDetails" placeholder="Transaction ID / Sender Details">
+            <button class="btn btn-buy" id="submitDeposit" style="width: 100%; margin-top: 10px;">Submit Request</button>
+            <button class="btn" id="closeDeposit" style="width: 100%; margin-top: 5px; background: #333; color: #fff;">Cancel</button>
         </div>
     </div>
 
     <div class="modal" id="withdrawModal">
         <div class="modal-content">
             <h3>Withdraw USDT</h3>
-            <div style="background: rgba(240, 185, 11, 0.1); border: 1px solid #f0b90b; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; color: #f0b90b;">
-                Need help with withdrawal? Contact Admin directly:<br>
-                <b>Phone / WhatsApp:</b> +92 3125124424<br>
-                <a href="https://wa.me/923125124424" target="_blank" style="display:inline-block; margin-top:6px; background:#25D366; color:#fff; padding:5px 10px; border-radius:4px; text-decoration:none; font-weight:bold;">💬 Chat on WhatsApp</a>
+            <input type="text" id="withdrawAddress" placeholder="Wallet Address / Account Details">
+            <input type="number" id="withdrawAmount" placeholder="Enter Amount ($)">
+            <button class="btn btn-sell" id="submitWithdraw" style="width: 100%; margin-top: 10px;">Submit Withdrawal</button>
+            <div style="margin-top: 15px; text-align: center;">
+                <a href="#" target="_blank" style="color: #0ecb81; font-size: 13px; text-decoration: none;">Contact Admin via WhatsApp</a>
             </div>
-            <div class="form-group">
-                <label>Destination Address</label>
-                <input type="text" id="withdrawAddress" placeholder="Enter wallet address">
-            </div>
-            <div class="form-group">
-                <label>Amount (USDT)</label>
-                <input type="number" id="withdrawAmount" placeholder="Enter amount">
-            </div>
-            <div style="display: flex; gap: 8px; margin-top: 5px;">
-                <button id="submitWithdraw" style="background:#f6465d; color:#fff; border:none; padding:8px; flex:1; font-weight:bold; border-radius:4px; cursor:pointer;">Withdraw</button>
-                <button id="closeWithdraw" style="background:#2b313a; color:#fff; border:none; padding:8px; flex:1; border-radius:4px; cursor:pointer;">Cancel</button>
-            </div>
+            <button class="btn" id="closeWithdraw" style="width: 100%; margin-top: 10px; background: #333; color: #fff;">Cancel</button>
+        </div>
+    </div>
+
+    <div class="modal" id="historyModal">
+        <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
+            <h3>Trade History</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Coin</th>
+                        <th>Side</th>
+                        <th>Price</th>
+                        <th>Amount/Size</th>
+                        <th>Fee (2%)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                    <tr><td colspan="6">No history found</td></tr>
+                </tbody>
+            </table>
+            <button class="btn" id="closeHistory" style="width: 100%; margin-top: 15px; background: #333; color: #fff;">Close</button>
         </div>
     </div>
 
     <div class="modal" id="adminModal">
-        <div class="modal-content" style="max-width: 450px; max-height: 80vh; overflow-y: auto;">
+        <div class="modal-content" style="max-width: 650px; max-height: 85vh; overflow-y: auto;">
             <h3>Admin Panel</h3>
             <div id="adminLoginBox">
-                <div class="form-group" style="margin-top: 10px;">
-                    <label>Admin Password</label>
-                    <input type="password" id="adminPasswordInput" placeholder="Enter password">
-                </div>
-                <button id="adminLoginBtn" style="background:#f0b90b; color:#000; border:none; padding:8px; width:100%; font-weight:bold; border-radius:4px; margin-top:10px; cursor:pointer;">Login</button>
+                <input type="password" id="adminPasswordInput" placeholder="Enter Admin Password">
+                <button class="btn btn-buy" id="adminLoginBtn" style="width: 100%; margin-top: 10px;">Login</button>
             </div>
-            <div id="adminDashboardContent" style="display: none;">
-                <p style="font-size: 13px; margin: 8px 0;">Total 2% Trading Fees / Profit: $<span id="adminProfit">0.00</span></p>
-                <h4 style="font-size: 13px; margin: 10px 0 5px 0;">User Requests & History</h4>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Type</th>
-                                <th>UID</th>
-                                <th>Amount</th>
-                                <th>Details</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="adminRequestsBody">
-                            <tr><td colspan="6">No requests</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+            <div id="adminDashboardContent" style="display: none; margin-top: 15px;">
+                <p><b>Total Admin Fees Collected: $<span id="adminProfit">0.00</span></b></p>
+                <h4>Pending Requests</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>UID</th>
+                            <th>Amount</th>
+                            <th>Details</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminRequestsBody"></tbody>
+                </table>
             </div>
-            <button id="closeAdmin" style="background:#2b313a; color:#fff; border:none; padding:8px; width:100%; border-radius:4px; margin-top:10px; cursor:pointer;">Close</button>
+            <button class="btn" id="closeAdmin" style="width: 100%; margin-top: 15px; background: #333; color: #fff;">Close</button>
         </div>
     </div>
 
     <script src="/js/app.js"></script>
-    <script>
-        window.addEventListener('DOMContentLoaded', async () => {
-            let uid = localStorage.getItem('crypto_uid') || localStorage.getItem('uid');
-            try {
-                const initRes = await fetch('/api/user/init', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid })
-                });
-                const initData = await initRes.json();
-                if(initData.success) {
-                    uid = initData.uid;
-                    localStorage.setItem('crypto_uid', uid);
-                    localStorage.setItem('uid', uid);
-                    document.getElementById('userUid').innerText = 'UID: ' + uid;
-                    await fetchUserPortfolio(uid);
-                }
-            } catch(e) { console.error('Initialization error', e); }
-        });
-
-        async function fetchUserPortfolio(uid) {
-            try {
-                const res = await fetch(`/api/user/portfolio/${uid}`);
-                const data = await res.json();
-                if(data.success && data.wallet) {
-                    document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
-                    if(data.stats) {
-                        document.getElementById('userStatsSummary').innerHTML = `Total Deposited: $${data.stats.totalDeposited.toFixed(2)} | Withdrawn: $${data.stats.totalWithdrawn.toFixed(2)} | Net P&L: $${data.stats.netProfitLoss.toFixed(2)}`;
-                    }
-                }
-            } catch(e) { console.error('Portfolio fetch error', e); }
-        }
-
-        document.getElementById('maxHoldingsBtn').addEventListener('click', async () => {
-            const currentSymbol = document.getElementById('selectedPairHeader').innerText.trim();
-            const uid = localStorage.getItem('crypto_uid') || localStorage.getItem('uid');
-            if(!uid) return;
-            try {
-                const res = await fetch(`/api/user/portfolio/${uid}`);
-                const data = await res.json();
-                if(data.success && data.holdings) {
-                    const holding = data.holdings.find(h => h.symbol === currentSymbol);
-                    if(holding && holding.amount > 0) {
-                        document.getElementById('tradeAmount').value = holding.amount;
-                    } else {
-                        alert('No holdings found for ' + currentSymbol);
-                    }
-                }
-            } catch(e) { console.error('MAX error', e); }
-        });
-    </script>
 </body>
-                </html>
+</html>
