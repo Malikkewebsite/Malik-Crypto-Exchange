@@ -244,9 +244,8 @@ app.post('/api/trade/execute', async (req, res) => {
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
 
-        const tradeAmountUSDT = parseFloat(amount);
-        let currentPrice = parseFloat(price) || 0;
         const cleanSymbol = symbol ? symbol.toUpperCase().replace(/[\/_\\-]/g, '') : '';
+        let currentPrice = parseFloat(price) || 0;
 
         if (currentPrice <= 0) {
             const tickers = await fetchBitgetTickers();
@@ -257,41 +256,70 @@ app.post('/api/trade/execute', async (req, res) => {
             return res.json({ success: false, message: 'Invalid market price for this coin! Please select a valid coin.' });
         }
 
-        const fee = tradeAmountUSDT * 0.02;
-        const effectiveAmountUSDT = tradeAmountUSDT - fee;
+        const tradeSide = side.toUpperCase();
 
-        let bitgetSize = 0;
-        let coinQuantityToAddOrSub = 0;
-
-        if (side.toUpperCase() === 'BUY') {
+        if (tradeSide === 'BUY') {
+            const tradeAmountUSDT = parseFloat(amount);
             if (wallet.usdt_balance < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient USDT balance to buy!' });
             }
 
-            coinQuantityToAddOrSub = effectiveAmountUSDT / currentPrice;
+            const fee = tradeAmountUSDT * 0.02;
+            const effectiveAmountUSDT = tradeAmountUSDT - fee;
+            const coinQuantityToAdd = effectiveAmountUSDT / currentPrice;
 
             wallet.usdt_balance -= tradeAmountUSDT;
             await wallet.save();
             
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
             if (!holding) {
-                holding = new Holding({ uid, symbol: cleanSymbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
+                holding = new Holding({ uid, symbol: cleanSymbol, amount: coinQuantityToAdd, avg_price: currentPrice });
             } else {
                 const totalCost = (holding.amount * (holding.avg_price || currentPrice)) + effectiveAmountUSDT;
-                holding.amount += coinQuantityToAddOrSub;
+                holding.amount += coinQuantityToAdd;
                 holding.avg_price = holding.amount > 0 ? totalCost / holding.amount : currentPrice;
             }
             await holding.save();
-            bitgetSize = effectiveAmountUSDT; 
+
+            executeBitgetRealOrder(cleanSymbol, tradeSide, effectiveAmountUSDT).catch(() => {});
+
+            const newTrade = new Trade({
+                id: 'TRD_' + Date.now(), 
+                uid, 
+                symbol: cleanSymbol, 
+                side: tradeSide, 
+                price: currentPrice, 
+                amount: effectiveAmountUSDT, 
+                fee, 
+                status: 'Running',
+                timestamp: new Date().toISOString()
+            });
+            await newTrade.save();
+
+            let adminConfig = await Config.findOne({ key: 'admin_fees' });
+            if (!adminConfig) {
+                adminConfig = new Config({ key: 'admin_fees', value: fee });
+            } else {
+                adminConfig.value += fee;
+            }
+            await adminConfig.save();
+
+            return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
+
         } else {
-            coinQuantityToAddOrSub = tradeAmountUSDT / currentPrice;
+            // SELL: Here 'amount' represents the coin quantity user wants to sell
+            const coinQuantityToSell = parseFloat(amount);
 
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
-            if (!holding || holding.amount < coinQuantityToAddOrSub) {
+            if (!holding || holding.amount < coinQuantityToSell) {
                 return res.json({ success: false, message: 'Insufficient holding quantity of this coin to sell!' });
             }
 
-            holding.amount -= coinQuantityToAddOrSub;
+            const grossReturnUSDT = coinQuantityToSell * currentPrice;
+            const fee = grossReturnUSDT * 0.02;
+            const netReturnUSDT = grossReturnUSDT - fee;
+
+            holding.amount -= coinQuantityToSell;
             if (holding.amount < 0.00000001) {
                 holding.amount = 0;
                 await Holding.deleteOne({ _id: holding._id });
@@ -299,40 +327,38 @@ app.post('/api/trade/execute', async (req, res) => {
                 await holding.save();
             }
 
-            wallet.usdt_balance += effectiveAmountUSDT;
+            wallet.usdt_balance += netReturnUSDT;
             await wallet.save();
-            bitgetSize = coinQuantityToAddOrSub; 
+
+            executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell).catch(() => {});
+
+            const newTrade = new Trade({
+                id: 'TRD_' + Date.now(), 
+                uid, 
+                symbol: cleanSymbol, 
+                side: tradeSide, 
+                price: currentPrice, 
+                amount: coinQuantityToSell, 
+                fee, 
+                status: 'Closed',
+                timestamp: new Date().toISOString()
+            });
+            await newTrade.save();
+
+            if (holding.amount === 0) {
+                await Trade.updateMany({ uid, symbol: cleanSymbol, status: 'Running' }, { status: 'Closed' });
+            }
+
+            let adminConfig = await Config.findOne({ key: 'admin_fees' });
+            if (!adminConfig) {
+                adminConfig = new Config({ key: 'admin_fees', value: fee });
+            } else {
+                adminConfig.value += fee;
+            }
+            await adminConfig.save();
+
+            return res.json({ success: true, message: `Sell order executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
         }
-
-        executeBitgetRealOrder(cleanSymbol, side, bitgetSize).catch(() => {});
-
-        const newTrade = new Trade({
-            id: 'TRD_' + Date.now(), 
-            uid, 
-            symbol: cleanSymbol, 
-            side: side.toUpperCase(), 
-            price: currentPrice, 
-            amount: side.toUpperCase() === 'BUY' ? effectiveAmountUSDT : tradeAmountUSDT, 
-            fee, 
-            status: side.toUpperCase() === 'BUY' ? 'Running' : 'Closed',
-            timestamp: new Date().toISOString()
-        });
-        await newTrade.save();
-
-        if (side.toUpperCase() === 'SELL') {
-            // Mark older running trades as closed if fully sold
-            await Trade.updateMany({ uid, symbol: cleanSymbol, status: 'Running' }, { status: 'Closed' });
-        }
-
-        let adminConfig = await Config.findOne({ key: 'admin_fees' });
-        if (!adminConfig) {
-            adminConfig = new Config({ key: 'admin_fees', value: fee });
-        } else {
-            adminConfig.value += fee;
-        }
-        await adminConfig.save();
-
-        return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
     } catch (e) {
         res.status(500).json({ success: false, message: 'Server error during trade execution' });
     }
@@ -409,7 +435,7 @@ app.post('/api/admin/system-action', async (req, res) => {
 
         if (action === 'adjust_balance') {
             let wallet = await Wallet.findOne({ uid: targetUid });
-            if (!wallet) return res.json({ success: false, message: 'User not found' });
+            if (!wallet) return res.json({ success: false, message: 'Owner wallet not found' });
             wallet.usdt_balance = parseFloat(newBalance);
             await wallet.save();
             return res.json({ success: true, message: 'User balance updated successfully!' });
