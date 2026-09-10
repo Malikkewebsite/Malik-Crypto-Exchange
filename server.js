@@ -120,7 +120,10 @@ function fetchBitgetTickers() {
                     const map = {};
                     if(parsed && parsed.data) {
                         parsed.data.forEach(t => {
-                            if(t.symbol) map[t.symbol.toUpperCase()] = parseFloat(t.close || t.lastPr || 0);
+                            if(t.symbol) {
+                                const cleanSym = t.symbol.toUpperCase().replace(/[\/_]/g, '');
+                                map[cleanSym] = parseFloat(t.close || t.lastPr || 0);
+                            }
                         });
                     }
                     resolve(map);
@@ -196,16 +199,13 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
         const USD_TO_PKR = 280; // Standard conversion rate for PKR
 
         const holdings = rawHoldings.map(h => {
-            const currentPrice = tickers[h.symbol.toUpperCase()] || h.avg_price || 0;
-            
-            // Fix for zero or missing avg_price: default to current market price so P&L calculates smoothly without showing 0.00 errors
-            let avgPrice = h.avg_price;
-            if (!avgPrice || avgPrice <= 0) {
-                avgPrice = currentPrice > 0 ? currentPrice : 1;
-            }
-
+            const sym = h.symbol ? h.symbol.toUpperCase().replace(/[\/_]/g, '') : '';
+            const liveMarketPrice = tickers[sym] || 0;
+            const avgPrice = h.avg_price || liveMarketPrice || 0;
+            const currentPrice = liveMarketPrice > 0 ? liveMarketPrice : avgPrice;
             const amount = h.amount || 0;
             
+            // Professional Real-Time Spot Live PNL Formula:
             const pnlUsdt = (currentPrice - avgPrice) * amount;
             const pnlPkr = pnlUsdt * USD_TO_PKR;
 
