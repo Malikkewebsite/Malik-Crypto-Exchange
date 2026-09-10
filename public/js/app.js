@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     let currentPair = 'BTCUSDT';
+    let marketPrices = {};
     
-    // Persistent UID and Local Balance Backup for Vercel Serverless
     let uid = localStorage.getItem('crypto_uid') || localStorage.getItem('uid');
     if (!uid) {
         uid = 'UID_' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let localBalance = parseFloat(localStorage.getItem('crypto_balance') || '0');
 
-    // Initialize user session on server with local backup sync
     fetch('/api/user/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -22,7 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Fetch Bitget Markets
     loadMarkets();
     setInterval(loadMarkets, 10000);
 
@@ -36,16 +34,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 container.innerHTML = '';
                 data.markets.filter(m => m.symbol.includes(search)).forEach(m => {
+                    const cleanSym = m.symbol.toUpperCase().replace(/[\/_\\-]/g, '');
+                    const priceVal = parseFloat(m.lastPr || 0);
+                    marketPrices[cleanSym] = priceVal;
+
                     const div = document.createElement('div');
                     div.style.cssText = 'display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #2b313a; cursor: pointer; font-size: 12px;';
-                    div.innerHTML = `<span><b>${m.symbol}</b></span> <span style="color: #0ecb81;">$${parseFloat(m.lastPr || 0).toFixed(4)}</span>`;
+                    div.innerHTML = `<span><b>${cleanSym}</b></span> <span style="color: #0ecb81;">$${priceVal.toFixed(4)}</span>`;
                     div.onclick = () => {
-                        currentPair = m.symbol.toUpperCase().replace(/[\/_\\-]/g, '');
+                        currentPair = cleanSym;
                         document.getElementById('selectedPairHeader').innerText = currentPair;
-                        document.getElementById('tradingPairTitle').innerText = currentPair;
+                        document.getElementById('tradingPairTitle').innerText = currentPair + ' Trading';
+                        updateExactPreview();
                     };
                     container.appendChild(div);
                 });
+                updateExactPreview();
             }
         } catch (e) {
             console.error('Market load error', e);
@@ -54,6 +58,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const searchInput = document.getElementById('marketSearch');
     if(searchInput) searchInput.addEventListener('input', loadMarkets);
+
+    const tradeAmountInput = document.getElementById('tradeAmount');
+    if(tradeAmountInput) {
+        tradeAmountInput.addEventListener('input', updateExactPreview);
+    }
+
+    function updateExactPreview() {
+        const amountVal = parseFloat(document.getElementById('tradeAmount').value) || 0;
+        const currentPrice = marketPrices[currentPair] || 0;
+        const previewEl = document.getElementById('exactCalculationPreview');
+        if(!previewEl) return;
+
+        if(amountVal <= 0 || currentPrice <= 0) {
+            previewEl.innerText = '';
+            return;
+        }
+
+        const fee = amountVal * 0.02;
+        const effectiveUSDT = amountVal - fee;
+        const exactCoinQty = effectiveUSDT / currentPrice;
+        previewEl.innerText = `Fee: $${fee.toFixed(2)} | Net Buy Qty: ${exactCoinQty.toFixed(4)} ${currentPair}`;
+    }
 
     async function loadUserData() {
         try {
@@ -72,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.setItem('crypto_balance', localBalance);
                 }
 
-                document.getElementById('userBalance').innerText = 'USDT Balance: ' + data.wallet.usdt_balance.toFixed(2);
+                document.getElementById('userBalance').innerText = 'USDT Balance: $' + data.wallet.usdt_balance.toFixed(2);
                 document.getElementById('userUid').innerText = 'UID: ' + uid;
                 
                 // Render Holdings
@@ -80,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.holdings && data.holdings.length > 0) {
                     holdingsBody.innerHTML = data.holdings.map(h => `
                         <tr>
-                            <td>${h.symbol}</td>
+                            <td><b>${h.symbol}</b></td>
                             <td>${h.amount.toFixed(4)}</td>
                             <td>$${h.avgPrice.toFixed(2)}</td>
                             <td style="color:${h.pnlUsdt >= 0 ? '#0ecb81' : '#f6465d'}">$${h.pnlUsdt.toFixed(2)}</td>
@@ -91,10 +117,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     holdingsBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
                 }
 
-                // Render Trades (Coin Name displayed instead of ID)
-                const tradesBody = document.getElementById('tradesTableBody');
+                // Render History Modal Trades
+                const historyBody = document.getElementById('historyTableBody');
                 if (data.trades && data.trades.length > 0) {
-                    tradesBody.innerHTML = data.trades.slice(-10).reverse().map(t => `
+                    historyBody.innerHTML = data.trades.slice(-20).reverse().map(t => `
                         <tr>
                             <td><b>${t.symbol || '-'}</b></td>
                             <td style="color:${t.side === 'BUY' ? '#0ecb81' : '#f6465d'}">${t.side}</td>
@@ -105,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tr>
                     `).join('');
                 } else {
-                    tradesBody.innerHTML = `<tr><td colspan="6">No trades found</td></tr>`;
+                    historyBody.innerHTML = `<tr><td colspan="6">No history found</td></tr>`;
                 }
 
                 if (data.stats) {
@@ -117,7 +143,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Trade Execution
     async function executeTrade(side) {
         const amount = parseFloat(document.getElementById('tradeAmount').value);
         const orderType = document.getElementById('orderType').value;
@@ -138,10 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(result.message);
             if (result.success) {
                 document.getElementById('tradeAmount').value = '';
+                document.getElementById('exactCalculationPreview').innerText = '';
                 await loadUserData();
             }
         } catch (e) {
             console.error('Trade error', e);
+            alert('Trade execution failed due to network error.');
         }
     }
 
@@ -151,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Modals Handling
     const depositModal = document.getElementById('depositModal');
     const withdrawModal = document.getElementById('withdrawModal');
+    const historyModal = document.getElementById('historyModal');
     const adminModal = document.getElementById('adminModal');
 
     document.getElementById('depositBtn').onclick = () => depositModal.style.display = 'flex';
@@ -161,6 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateWhatsAppLink();
     };
     document.getElementById('closeWithdraw').onclick = () => withdrawModal.style.display = 'none';
+
+    document.getElementById('historyBtn').onclick = () => {
+        historyModal.style.display = 'flex';
+        loadUserData();
+    };
+    document.getElementById('closeHistory').onclick = () => historyModal.style.display = 'none';
 
     document.getElementById('adminBtn').onclick = () => adminModal.style.display = 'flex';
     document.getElementById('closeAdmin').onclick = () => adminModal.style.display = 'none';
