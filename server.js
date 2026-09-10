@@ -186,7 +186,11 @@ app.post('/api/trade/execute', async (req, res) => {
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
 
         const tradeAmountUSDT = parseFloat(amount);
-        const currentPrice = parseFloat(price) || 0;
+        let currentPrice = parseFloat(price) || 0;
+
+        if (currentPrice <= 0) {
+            currentPrice = 1; 
+        }
 
         if (tradeAmountUSDT <= 0) {
             return res.json({ success: false, message: 'Trade amount is too low!' });
@@ -202,11 +206,7 @@ app.post('/api/trade/execute', async (req, res) => {
             if (wallet.usdt_balance < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient USDT balance to buy!' });
             }
-            if (currentPrice <= 0) {
-                return res.json({ success: false, message: 'Invalid market price for this coin!' });
-            }
 
-            // Calculate exact coin quantity based on effective USDT after fee
             coinQuantityToAddOrSub = effectiveAmountUSDT / currentPrice;
 
             wallet.usdt_balance -= tradeAmountUSDT;
@@ -216,7 +216,6 @@ app.post('/api/trade/execute', async (req, res) => {
             if (!holding) {
                 holding = new Holding({ uid, symbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
             } else {
-                // Update average price and total coin quantity accurately
                 const totalCost = (holding.amount * holding.avg_price) + effectiveAmountUSDT;
                 holding.amount += coinQuantityToAddOrSub;
                 holding.avg_price = holding.amount > 0 ? totalCost / holding.amount : currentPrice;
@@ -224,11 +223,6 @@ app.post('/api/trade/execute', async (req, res) => {
             await holding.save();
             bitgetSize = effectiveAmountUSDT; 
         } else {
-            // SELL Side: amount here sent from UI is either USDT value or coin amount depending on frontend, 
-            // let's ensure we check against exact coin holdings. If amount represents USDT value to sell:
-            if (currentPrice <= 0) {
-                return res.json({ success: false, message: 'Invalid market price for this coin!' });
-            }
             coinQuantityToAddOrSub = tradeAmountUSDT / currentPrice;
 
             let holding = await Holding.findOne({ uid, symbol });
@@ -237,7 +231,7 @@ app.post('/api/trade/execute', async (req, res) => {
             }
 
             holding.amount -= coinQuantityToAddOrSub;
-            if (holding.amount < 0.00000001) holding.amount = 0; // cleanup dust
+            if (holding.amount < 0.00000001) holding.amount = 0;
             await holding.save();
 
             wallet.usdt_balance += effectiveAmountUSDT;
