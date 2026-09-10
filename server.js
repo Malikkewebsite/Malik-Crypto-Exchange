@@ -30,7 +30,17 @@ const Wallet = mongoose.models.Wallet || mongoose.model('Wallet', WalletSchema);
 const HoldingSchema = new mongoose.Schema({ uid: String, symbol: String, amount: Number, avg_price: Number });
 const Holding = mongoose.models.Holding || mongoose.model('Holding', HoldingSchema);
 
-const TradeSchema = new mongoose.Schema({ id: String, uid: String, symbol: String, side: String, price: Number, amount: Number, fee: Number, timestamp: String });
+const TradeSchema = new mongoose.Schema({ 
+    id: String, 
+    uid: String, 
+    symbol: String, 
+    side: String, 
+    price: Number, 
+    amount: Number, 
+    fee: Number, 
+    status: { type: String, default: 'Running' }, 
+    timestamp: String 
+});
 const Trade = mongoose.models.Trade || mongoose.model('Trade', TradeSchema);
 
 const DepositSchema = new mongoose.Schema({ id: String, uid: String, method: String, amount: Number, details: String, status: String, timestamp: String });
@@ -191,21 +201,21 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
             await wallet.save();
         }
         const rawHoldings = await Holding.find({ uid });
-        const trades = await Trade.find({ uid });
+        const trades = await Trade.find({ uid }).sort({ _id: -1 });
         const deposits = await Deposit.find({ uid });
         const withdrawals = await Withdrawal.find({ uid });
 
         const tickers = await fetchBitgetTickers();
-        const USD_TO_PKR = 280; // Standard conversion rate for PKR
+        const USD_TO_PKR = 280; // Standard USD to PKR rate
 
         const holdings = rawHoldings.map(h => {
             const sym = h.symbol ? h.symbol.toUpperCase().replace(/[\/_]/g, '') : '';
             const liveMarketPrice = tickers[sym] || 0;
-            const avgPrice = h.avg_price || liveMarketPrice || 0;
+            const avgPrice = h.avg_price || 0;
             const currentPrice = liveMarketPrice > 0 ? liveMarketPrice : avgPrice;
             const amount = h.amount || 0;
             
-            // Professional Real-Time Spot Live PNL Formula:
+            // Accurate Real-Time Spot Live PNL Formula:
             const pnlUsdt = (currentPrice - avgPrice) * amount;
             const pnlPkr = pnlUsdt * USD_TO_PKR;
 
@@ -240,11 +250,13 @@ app.post('/api/trade/execute', async (req, res) => {
         let currentPrice = parseFloat(price) || 0;
 
         if (currentPrice <= 0) {
-            currentPrice = 1; 
+            const tickers = await fetchBitgetTickers();
+            const cleanSym = symbol ? symbol.toUpperCase().replace(/[\/_]/g, '') : '';
+            currentPrice = tickers[cleanSym] || 0;
         }
 
-        if (tradeAmountUSDT <= 0) {
-            return res.json({ success: false, message: 'Trade amount is too low!' });
+        if (currentPrice <= 0) {
+            return res.json({ success: false, message: 'Invalid market price for this coin! Please select a valid coin.' });
         }
 
         const fee = tradeAmountUSDT * 0.02;
@@ -278,11 +290,15 @@ app.post('/api/trade/execute', async (req, res) => {
 
             let holding = await Holding.findOne({ uid, symbol });
             if (!holding || holding.amount < coinQuantityToAddOrSub) {
-                return res.json({ success: false, message: 'Insufficient coin quantity available in your holdings to sell!' });
+                return res.json({ success: false, message: 'Insufficient holding quantity of this coin to sell!' });
             }
 
             holding.amount -= coinQuantityToAddOrSub;
-            if (holding.amount < 0.00000001) holding.amount = 0;
+            if (holding.amount < 0.00000001) {
+                holding.amount = 0;
+                // Mark previous active trades for this symbol as Closed
+                await Trade.updateMany({ uid, symbol, status: 'Running' }, { status: 'Closed' });
+            }
             await holding.save();
 
             wallet.usdt_balance += effectiveAmountUSDT;
@@ -293,7 +309,15 @@ app.post('/api/trade/execute', async (req, res) => {
         executeBitgetRealOrder(symbol, side, bitgetSize).catch(() => {});
 
         const newTrade = new Trade({
-            id: 'TRD_' + Date.now(), uid, symbol, side: side.toUpperCase(), price: currentPrice, amount: side.toUpperCase() === 'BUY' ? effectiveAmountUSDT : tradeAmountUSDT, fee, timestamp: new Date().toISOString()
+            id: 'TRD_' + Date.now(), 
+            uid, 
+            symbol, 
+            side: side.toUpperCase(), 
+            price: currentPrice, 
+            amount: side.toUpperCase() === 'BUY' ? effectiveAmountUSDT : tradeAmountUSDT, 
+            fee, 
+            status: side.toUpperCase() === 'BUY' ? 'Running' : 'Closed',
+            timestamp: new Date().toISOString()
         });
         await newTrade.save();
 
@@ -446,5 +470,4 @@ app.post('/api/admin/action', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
+const PORT = process.env.PORT ||
