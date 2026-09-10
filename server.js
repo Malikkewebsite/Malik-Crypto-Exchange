@@ -4,13 +4,12 @@ const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Frontend static files (public folder) serve karne ke liye
+// Serve all static files from public directory properly
 app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Connection Helper
@@ -125,14 +124,9 @@ function executeBitgetRealOrder(symbol, side, amount) {
     });
 }
 
-// Homepage Route (Loads index.html from public folder correctly)
+// Homepage Route
 app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-    } else {
-        res.send('Malik Crypto Exchange Backend Server is Running! ✅');
-    }
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Trade Execute Endpoint (Buy & Sell both working with real Bitget)
