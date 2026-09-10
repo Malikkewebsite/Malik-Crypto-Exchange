@@ -180,44 +180,75 @@ app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
         const { uid, symbol, side, price, amount } = req.body;
-        if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid parameters' });
+        if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid parameters or low quantity entered!' });
 
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
 
         const tradeAmountUSDT = parseFloat(amount);
+        const currentPrice = parseFloat(price) || 0;
+
+        if (tradeAmountUSDT <= 0) {
+            return res.json({ success: false, message: 'Trade amount is too low!' });
+        }
+
         const fee = tradeAmountUSDT * 0.02;
-        const effectiveAmount = tradeAmountUSDT - fee;
+        const effectiveAmountUSDT = tradeAmountUSDT - fee;
 
         let bitgetSize = 0;
+        let coinQuantityToAddOrSub = 0;
 
         if (side.toUpperCase() === 'BUY') {
-            if (wallet.usdt_balance < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient USDT balance!' });
+            if (wallet.usdt_balance < tradeAmountUSDT) {
+                return res.json({ success: false, message: 'Insufficient USDT balance to buy!' });
+            }
+            if (currentPrice <= 0) {
+                return res.json({ success: false, message: 'Invalid market price for this coin!' });
+            }
+
+            // Calculate exact coin quantity based on effective USDT after fee
+            coinQuantityToAddOrSub = effectiveAmountUSDT / currentPrice;
+
             wallet.usdt_balance -= tradeAmountUSDT;
             await wallet.save();
             
             let holding = await Holding.findOne({ uid, symbol });
             if (!holding) {
-                holding = new Holding({ uid, symbol, amount: effectiveAmount, avg_price: price || 0 });
+                holding = new Holding({ uid, symbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
             } else {
-                holding.amount += effectiveAmount;
+                // Update average price and total coin quantity accurately
+                const totalCost = (holding.amount * holding.avg_price) + effectiveAmountUSDT;
+                holding.amount += coinQuantityToAddOrSub;
+                holding.avg_price = holding.amount > 0 ? totalCost / holding.amount : currentPrice;
             }
             await holding.save();
-            bitgetSize = effectiveAmount; // For Buy, Bitget takes USDT amount/value size
+            bitgetSize = effectiveAmountUSDT; 
         } else {
+            // SELL Side: amount here sent from UI is either USDT value or coin amount depending on frontend, 
+            // let's ensure we check against exact coin holdings. If amount represents USDT value to sell:
+            if (currentPrice <= 0) {
+                return res.json({ success: false, message: 'Invalid market price for this coin!' });
+            }
+            coinQuantityToAddOrSub = tradeAmountUSDT / currentPrice;
+
             let holding = await Holding.findOne({ uid, symbol });
-            if (!holding || holding.amount < tradeAmountUSDT) return res.json({ success: false, message: 'Insufficient coin holding to sell!' });
-            holding.amount -= tradeAmountUSDT;
+            if (!holding || holding.amount < coinQuantityToAddOrSub) {
+                return res.json({ success: false, message: 'Insufficient coin quantity available in your holdings to sell!' });
+            }
+
+            holding.amount -= coinQuantityToAddOrSub;
+            if (holding.amount < 0.00000001) holding.amount = 0; // cleanup dust
             await holding.save();
-            wallet.usdt_balance += effectiveAmount;
+
+            wallet.usdt_balance += effectiveAmountUSDT;
             await wallet.save();
-            bitgetSize = tradeAmountUSDT; // For Sell, Bitget takes exact coin quantity size
+            bitgetSize = coinQuantityToAddOrSub; 
         }
 
         executeBitgetRealOrder(symbol, side, bitgetSize).catch(() => {});
 
         const newTrade = new Trade({
-            id: 'TRD_' + Date.now(), uid, symbol, side: side.toUpperCase(), price: price || 0, amount: effectiveAmount, fee, timestamp: new Date().toISOString()
+            id: 'TRD_' + Date.now(), uid, symbol, side: side.toUpperCase(), price: currentPrice, amount: side.toUpperCase() === 'BUY' ? effectiveAmountUSDT : tradeAmountUSDT, fee, timestamp: new Date().toISOString()
         });
         await newTrade.save();
 
@@ -229,9 +260,9 @@ app.post('/api/trade/execute', async (req, res) => {
         }
         await adminConfig.save();
 
-        return res.json({ success: true, message: `Trade executed successfully! Real Bitget order sent & 2% fee ($${fee.toFixed(2)}) applied.` });
+        return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
     } catch (e) {
-        res.status(500).json({ success: false, message: 'Server error during trade' });
+        res.status(500).json({ success: false, message: 'Server error during trade execution' });
     }
 });
 
