@@ -206,7 +206,7 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
         const withdrawals = await Withdrawal.find({ uid });
 
         const tickers = await fetchBitgetTickers();
-        const USD_TO_PKR = 280; // Standard USD to PKR rate
+        const USD_TO_PKR = 280;
 
         const holdings = rawHoldings.map(h => {
             const sym = h.symbol ? h.symbol.toUpperCase().replace(/[\/_]/g, '') : '';
@@ -215,7 +215,6 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
             const currentPrice = liveMarketPrice > 0 ? liveMarketPrice : avgPrice;
             const amount = h.amount || 0;
             
-            // Accurate Real-Time Spot Live PNL Formula:
             const pnlUsdt = (currentPrice - avgPrice) * amount;
             const pnlPkr = pnlUsdt * USD_TO_PKR;
 
@@ -296,7 +295,6 @@ app.post('/api/trade/execute', async (req, res) => {
             holding.amount -= coinQuantityToAddOrSub;
             if (holding.amount < 0.00000001) {
                 holding.amount = 0;
-                // Mark previous active trades for this symbol as Closed
                 await Trade.updateMany({ uid, symbol, status: 'Running' }, { status: 'Closed' });
             }
             await holding.save();
@@ -359,7 +357,6 @@ app.post('/api/withdraw/request', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
-// Community Leaderboard Route
 app.get('/api/community/leaderboard', async (req, res) => {
     try {
         await connectDB();
@@ -375,7 +372,6 @@ app.get('/api/community/leaderboard', async (req, res) => {
     }
 });
 
-// Admin Panel Data Route
 app.post('/api/admin/data', async (req, res) => {
     try {
         await connectDB();
@@ -391,7 +387,6 @@ app.post('/api/admin/data', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
-// Admin System Management Route (Maintenance & User Management)
 app.post('/api/admin/system-action', async (req, res) => {
     try {
         await connectDB();
@@ -421,7 +416,6 @@ app.post('/api/admin/system-action', async (req, res) => {
     }
 });
 
-// Admin Unified Action Route
 app.post('/api/admin/action', async (req, res) => {
     try {
         await connectDB();
@@ -470,4 +464,5 @@ app.post('/api/admin/action', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT ||
+// Vercel serverless export (No app.listen here)
+module.exports = app;
