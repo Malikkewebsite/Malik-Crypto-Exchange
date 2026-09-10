@@ -3,10 +3,14 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const crypto = require('crypto');
 const https = require('https');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+// Frontend static files serve karne ke liye
+app.use(express.static(path.join(__dirname)));
 
 // MongoDB Connection Helper
 let isConnected = false;
@@ -120,9 +124,9 @@ function executeBitgetRealOrder(symbol, side, amount) {
     });
 }
 
-// Homepage Route (Fixes Cannot GET / error)
+// Homepage Route (Sirf index.html serve karega taake website properly show ho)
 app.get('/', (req, res) => {
-    res.send('Malik Crypto Exchange Server is Running Successfully! ✅');
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Trade Execute Endpoint
