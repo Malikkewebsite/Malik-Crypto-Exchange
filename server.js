@@ -207,8 +207,6 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
         }
         const rawHoldings = await Holding.find({ uid });
         const trades = await Trade.find({ uid }).sort({ _id: -1 });
-        const deposits = await Deposit.find({ uid });
-        const withdrawals = await Withdrawal.find({ uid });
 
         const tickers = await fetchBitgetTickers();
         const USD_TO_PKR = 280;
@@ -233,11 +231,7 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
             };
         });
 
-        const totalDeposited = deposits.filter(d => d.status === 'Approved').reduce((acc, d) => acc + d.amount, 0);
-        const totalWithdrawn = withdrawals.filter(w => w.status === 'Approved').reduce((acc, w) => acc + w.amount, 0);
-        const netProfitLoss = (wallet.usdt_balance + totalWithdrawn) - totalDeposited;
-
-        res.json({ success: true, wallet, holdings, trades, deposits, withdrawals, stats: { totalDeposited, totalWithdrawn, netProfitLoss } });
+        res.json({ success: true, wallet, holdings, trades });
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
@@ -245,7 +239,7 @@ app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
         const { uid, symbol, side, price, amount } = req.body;
-        if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid parameters or low quantity entered!' });
+        if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid parameters entered!' });
 
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
@@ -314,16 +308,25 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await adminConfig.save();
 
-            return res.json({ success: true, message: `Trade executed successfully! Exact quantity updated & 2% fee ($${fee.toFixed(2)}) applied.` });
+            return res.json({ success: true, message: `Trade executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
 
         } else {
-            const coinQuantityToSell = parseFloat(amount);
-
+            // Sell logic: Input is USDT value user wants to sell (e.g. $3 out of their holdings)
+            const sellAmountUSDT = parseFloat(amount);
+            
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
-            if (!holding || holding.amount < coinQuantityToSell) {
-                return res.json({ success: false, message: 'Insufficient holding quantity of this coin to sell!' });
+            if (!holding || holding.amount <= 0) {
+                return res.json({ success: false, message: 'No holdings found for this coin to sell!' });
             }
 
+            const totalHoldingValueUSDT = holding.amount * currentPrice;
+            if (sellAmountUSDT > totalHoldingValueUSDT + 0.01) {
+                return res.json({ success: false, message: 'You are trying to sell more than your total holding value!' });
+            }
+
+            // Calculate coin quantity corresponding to the USDT amount entered
+            const coinQuantityToSell = Math.min(holding.amount, sellAmountUSDT / currentPrice);
+            
             const grossReturnUSDT = coinQuantityToSell * currentPrice;
             const fee = grossReturnUSDT * 0.02;
             const netReturnUSDT = grossReturnUSDT - fee;
@@ -340,8 +343,14 @@ app.post('/api/trade/execute', async (req, res) => {
             await wallet.save();
 
             try {
+                // Bitget API requires minimum order size, ensure size is sufficient or pass calculated token amount
                 await executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell);
             } catch (exchangeErr) {
+                // Refund balance if exchange rejects
+                wallet.usdt_balance -= netReturnUSDT;
+                holding.amount += coinQuantityToSell;
+                await wallet.save();
+                await holding.save();
                 return res.json({ success: false, message: `Exchange Error: ${exchangeErr.message}` });
             }
 
@@ -351,16 +360,12 @@ app.post('/api/trade/execute', async (req, res) => {
                 symbol: cleanSymbol, 
                 side: tradeSide, 
                 price: currentPrice, 
-                amount: coinQuantityToSell, 
+                amount: grossReturnUSDT, 
                 fee, 
                 status: 'Closed',
                 timestamp: new Date().toISOString()
             });
             await newTrade.save();
-
-            if (holding.amount === 0) {
-                await Trade.updateMany({ uid, symbol: cleanSymbol, status: 'Running' }, { status: 'Closed' });
-            }
 
             let adminConfig = await Config.findOne({ key: 'admin_fees' });
             if (!adminConfig) {
