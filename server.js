@@ -10,7 +10,6 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://quranrecitation657_db_user:Gz9A5swK2qGWDuNr@cluster0.r3imucc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 async function connectDB() {
@@ -23,7 +22,6 @@ async function connectDB() {
     }
 }
 
-// Schemas & Models
 const WalletSchema = new mongoose.Schema({ uid: String, usdt_balance: { type: Number, default: 0.0 } });
 const Wallet = mongoose.models.Wallet || mongoose.model('Wallet', WalletSchema);
 
@@ -403,21 +401,6 @@ app.post('/api/withdraw/request', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
 });
 
-app.get('/api/community/leaderboard', async (req, res) => {
-    try {
-        await connectDB();
-        const wallets = await Wallet.find().sort({ usdt_balance: -1 }).limit(10);
-        const leaderboard = wallets.map((w, index) => ({
-            rank: index + 1,
-            uid: w.uid.substring(0, 6) + '***',
-            balance: w.usdt_balance
-        }));
-        res.json({ success: true, leaderboard });
-    } catch (e) {
-        res.status(500).json({ success: false, leaderboard: [] });
-    }
-});
-
 app.post('/api/admin/data', async (req, res) => {
     try {
         await connectDB();
@@ -431,35 +414,6 @@ app.post('/api/admin/data', async (req, res) => {
         const maintenanceConfig = await Maintenance.findOne({ key: 'maintenance' });
         res.json({ success: true, deposits, withdrawals, trades, wallets, admin_profit: adminConfig ? adminConfig.value : 0, maintenance: maintenanceConfig ? maintenanceConfig.enabled : false });
     } catch (e) { res.status(500).json({ success: false, message: 'Server error' }); }
-});
-
-app.post('/api/admin/system-action', async (req, res) => {
-    try {
-        await connectDB();
-        const { password, action, targetUid, newBalance } = req.body;
-        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
-            return res.json({ success: false, message: 'Invalid Password' });
-        }
-
-        if (action === 'toggle_maintenance') {
-            let m = await Maintenance.findOne({ key: 'maintenance' });
-            const newState = m ? !m.enabled : true;
-            await Maintenance.findOneAndUpdate({ key: 'maintenance' }, { enabled: newState }, { upsert: true });
-            return res.json({ success: true, message: `Maintenance mode ${newState ? 'Enabled' : 'Disabled'}` });
-        }
-
-        if (action === 'adjust_balance') {
-            let wallet = await Wallet.findOne({ uid: targetUid });
-            if (!wallet) return res.json({ success: false, message: 'Owner wallet not found' });
-            wallet.usdt_balance = parseFloat(newBalance);
-            await wallet.save();
-            return res.json({ success: true, message: 'User balance updated successfully!' });
-        }
-
-        res.json({ success: false, message: 'Invalid action' });
-    } catch (e) {
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
 });
 
 app.post('/api/admin/action', async (req, res) => {
