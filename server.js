@@ -239,7 +239,11 @@ app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
         const { uid, symbol, side, price, amount } = req.body;
-        if (!uid || !amount || amount <= 0) return res.json({ success: false, message: 'Invalid parameters entered!' });
+        const tradeAmountUSDT = parseFloat(amount);
+        
+        if (!uid || !tradeAmountUSDT || tradeAmountUSDT <= 0) {
+            return res.json({ success: false, message: 'Invalid amount entered!' });
+        }
 
         let wallet = await Wallet.findOne({ uid });
         if (!wallet) return res.json({ success: false, message: 'Wallet not found' });
@@ -259,7 +263,6 @@ app.post('/api/trade/execute', async (req, res) => {
         const tradeSide = side.toUpperCase();
 
         if (tradeSide === 'BUY') {
-            const tradeAmountUSDT = parseFloat(amount);
             if (wallet.usdt_balance < tradeAmountUSDT) {
                 return res.json({ success: false, message: 'Insufficient USDT balance to buy!' });
             }
@@ -281,10 +284,18 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await holding.save();
 
+            // Real Exchange Order execution with safe size formatting
             try {
+                // If coin price is high or whole numbers needed, handle safely. Using 4 decimals max for real orders.
                 const formattedBuySize = parseFloat(effectiveAmountUSDT.toFixed(4));
                 await executeBitgetRealOrder(cleanSymbol, tradeSide, formattedBuySize);
             } catch (exchangeErr) {
+                // Rollback on failure
+                wallet.usdt_balance += tradeAmountUSDT;
+                holding.amount -= coinQuantityToAdd;
+                if (holding.amount <= 0) await Holding.deleteOne({ _id: holding._id });
+                else await holding.save();
+                await wallet.save();
                 return res.json({ success: false, message: `Exchange Error: ${exchangeErr.message}` });
             }
 
@@ -309,22 +320,21 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await adminConfig.save();
 
-            return res.json({ success: true, message: `Trade executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
+            return res.json({ success: true, message: `Real buy order executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
 
         } else {
-            const sellAmountUSDT = parseFloat(amount);
-            
+            // Sell logic
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
             if (!holding || holding.amount <= 0) {
                 return res.json({ success: false, message: 'No holdings found for this coin to sell!' });
             }
 
             const totalHoldingValueUSDT = holding.amount * currentPrice;
-            if (sellAmountUSDT > totalHoldingValueUSDT + 0.01) {
+            if (tradeAmountUSDT > totalHoldingValueUSDT + 0.05) {
                 return res.json({ success: false, message: 'You are trying to sell more than your total holding value!' });
             }
 
-            const coinQuantityToSell = Math.min(holding.amount, sellAmountUSDT / currentPrice);
+            const coinQuantityToSell = Math.min(holding.amount, tradeAmountUSDT / currentPrice);
             
             const grossReturnUSDT = coinQuantityToSell * currentPrice;
             const fee = grossReturnUSDT * 0.02;
@@ -341,10 +351,20 @@ app.post('/api/trade/execute', async (req, res) => {
             wallet.usdt_balance += netReturnUSDT;
             await wallet.save();
 
+            // Real Exchange Order execution with automatic integer/decimal handling to prevent scale errors
             try {
-                const formattedSize = parseFloat(coinQuantityToSell.toFixed(4));
+                // Automatically fallback to rounded integer if exchange throws scale error or for safety on restricted coins
+                let formattedSize;
+                if (coinQuantityToSell < 10 && coinQuantityToSell % 1 !== 0) {
+                    formattedSize = parseFloat(coinQuantityToSell.toFixed(2));
+                } else {
+                    formattedSize = Math.round(coinQuantityToSell);
+                    if (formattedSize <= 0) formattedSize = parseFloat(coinQuantityToSell.toFixed(4));
+                }
+
                 await executeBitgetRealOrder(cleanSymbol, tradeSide, formattedSize);
             } catch (exchangeErr) {
+                // If real exchange fails, rollback balances
                 wallet.usdt_balance -= netReturnUSDT;
                 holding.amount += coinQuantityToSell;
                 await wallet.save();
@@ -373,7 +393,7 @@ app.post('/api/trade/execute', async (req, res) => {
             }
             await adminConfig.save();
 
-            return res.json({ success: true, message: `Sell order executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
+            return res.json({ success: true, message: `Real sell order executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
         }
     } catch (e) {
         res.status(500).json({ success: false, message: 'Server error during trade execution' });
@@ -465,6 +485,10 @@ app.post('/api/admin/action', async (req, res) => {
     } catch (e) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
+});
+
+app.listen(3000, () => {
+    console.log('Server running on port 3000');
 });
 
 module.exports = app;
