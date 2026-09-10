@@ -472,4 +472,47 @@ app.post('/api/admin/action', async (req, res) => {
         await connectDB();
         const { password, type, id, status } = req.body;
         
-    
+        if (password !== (process.env.ADMIN_PASSWORD || 'Mmooossaa35')) {
+            return res.json({ success: false, message: 'Invalid Password' });
+        }
+
+        if (type === 'deposit') {
+            const deposit = await Deposit.findOne({ id });
+            if (!deposit) return res.json({ success: false, message: 'Deposit request not found' });
+            if (deposit.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+
+            deposit.status = status;
+            await deposit.save();
+
+            if (status === 'Approved') {
+                let wallet = await Wallet.findOne({ uid: deposit.uid });
+                if (!wallet) {
+                    wallet = new Wallet({ uid: deposit.uid, usdt_balance: 0 });
+                }
+                wallet.usdt_balance += deposit.amount;
+                await wallet.save();
+            }
+        } else if (type === 'withdrawal') {
+            const withdrawal = await Withdrawal.findOne({ id });
+            if (!withdrawal) return res.json({ success: false, message: 'Withdrawal request not found' });
+            if (withdrawal.status !== 'Pending') return res.json({ success: false, message: 'Request already processed' });
+
+            withdrawal.status = status;
+            await withdrawal.save();
+
+            if (status === 'Rejected') {
+                let wallet = await Wallet.findOne({ uid: withdrawal.uid });
+                if (wallet) {
+                    wallet.usdt_balance += withdrawal.amount;
+                    await wallet.save();
+                }
+            }
+        }
+
+        res.json({ success: true, message: `Request ${status} successfully!` });
+    } catch (e) {
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+module.exports = app;
