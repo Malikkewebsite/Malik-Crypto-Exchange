@@ -282,7 +282,8 @@ app.post('/api/trade/execute', async (req, res) => {
             await holding.save();
 
             try {
-                await executeBitgetRealOrder(cleanSymbol, tradeSide, effectiveAmountUSDT);
+                const formattedBuySize = parseFloat(effectiveAmountUSDT.toFixed(4));
+                await executeBitgetRealOrder(cleanSymbol, tradeSide, formattedBuySize);
             } catch (exchangeErr) {
                 return res.json({ success: false, message: `Exchange Error: ${exchangeErr.message}` });
             }
@@ -311,7 +312,6 @@ app.post('/api/trade/execute', async (req, res) => {
             return res.json({ success: true, message: `Trade executed successfully! 2% fee ($${fee.toFixed(2)}) applied.` });
 
         } else {
-            // Sell logic: Input is USDT value user wants to sell (e.g. $3 out of their holdings)
             const sellAmountUSDT = parseFloat(amount);
             
             let holding = await Holding.findOne({ uid, symbol: cleanSymbol });
@@ -324,7 +324,6 @@ app.post('/api/trade/execute', async (req, res) => {
                 return res.json({ success: false, message: 'You are trying to sell more than your total holding value!' });
             }
 
-            // Calculate coin quantity corresponding to the USDT amount entered
             const coinQuantityToSell = Math.min(holding.amount, sellAmountUSDT / currentPrice);
             
             const grossReturnUSDT = coinQuantityToSell * currentPrice;
@@ -343,10 +342,9 @@ app.post('/api/trade/execute', async (req, res) => {
             await wallet.save();
 
             try {
-                // Bitget API requires minimum order size, ensure size is sufficient or pass calculated token amount
-                await executeBitgetRealOrder(cleanSymbol, tradeSide, coinQuantityToSell);
+                const formattedSize = parseFloat(coinQuantityToSell.toFixed(4));
+                await executeBitgetRealOrder(cleanSymbol, tradeSide, formattedSize);
             } catch (exchangeErr) {
-                // Refund balance if exchange rejects
                 wallet.usdt_balance -= netReturnUSDT;
                 holding.amount += coinQuantityToSell;
                 await wallet.save();
