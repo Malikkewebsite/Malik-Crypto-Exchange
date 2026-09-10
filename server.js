@@ -197,7 +197,13 @@ app.get('/api/user/portfolio/:uid', async (req, res) => {
 
         const holdings = rawHoldings.map(h => {
             const currentPrice = tickers[h.symbol.toUpperCase()] || h.avg_price || 0;
-            const avgPrice = h.avg_price || 0;
+            
+            // Fix for zero or missing avg_price: default to current market price so P&L calculates smoothly without showing 0.00 errors
+            let avgPrice = h.avg_price;
+            if (!avgPrice || avgPrice <= 0) {
+                avgPrice = currentPrice > 0 ? currentPrice : 1;
+            }
+
             const amount = h.amount || 0;
             
             const pnlUsdt = (currentPrice - avgPrice) * amount;
@@ -261,7 +267,7 @@ app.post('/api/trade/execute', async (req, res) => {
             if (!holding) {
                 holding = new Holding({ uid, symbol, amount: coinQuantityToAddOrSub, avg_price: currentPrice });
             } else {
-                const totalCost = (holding.amount * holding.avg_price) + effectiveAmountUSDT;
+                const totalCost = (holding.amount * (holding.avg_price || currentPrice)) + effectiveAmountUSDT;
                 holding.amount += coinQuantityToAddOrSub;
                 holding.avg_price = holding.amount > 0 ? totalCost / holding.amount : currentPrice;
             }
