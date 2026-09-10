@@ -9,7 +9,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Serve all static files from public directory properly
+// Static files ko wese hi serve karega jese aapki purani website thi
 app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Connection Helper
@@ -129,7 +129,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Trade Execute Endpoint (Buy & Sell both working with real Bitget)
+// Trade Execute Endpoint (Buy & Sell both perfectly working)
 app.post('/api/trade/execute', async (req, res) => {
     try {
         await connectDB();
