@@ -73,7 +73,7 @@
                         <thead>
                             <tr>
                                 <th>Symbol</th>
-                                <th>Amount</th>
+                                <th>Quantity</th>
                                 <th>Avg Price</th>
                                 <th>P&L (USDT)</th>
                                 <th>P&L (PKR)</th>
@@ -221,6 +221,30 @@
                     if(data.stats) {
                         document.getElementById('userStatsSummary').innerHTML = `Total Deposited: $${data.stats.totalDeposited.toFixed(2)} | Withdrawn: $${data.stats.totalWithdrawn.toFixed(2)} | Net P&L: $${data.stats.netProfitLoss.toFixed(2)}`;
                     }
+
+                    // Render Holdings with Quantity and P&L (USDT & PKR)
+                    const holdingsTableBody = document.getElementById('holdingsTableBody');
+                    if(data.holdings && data.holdings.length > 0) {
+                        holdingsTableBody.innerHTML = '';
+                        data.holdings.forEach(h => {
+                            const pnlUsdt = h.pnlUsdt || 0;
+                            const pnlPkr = h.pnlPkr || 0;
+                            
+                            const pnlUsdtClass = pnlUsdt >= 0 ? 'color:#0ecb81;' : 'color:#f6465d;';
+                            const pnlPkrClass = pnlPkr >= 0 ? 'color:#0ecb81;' : 'color:#f6465d;';
+
+                            const row = `<tr>
+                                <td>${h.symbol}</td>
+                                <td>${h.amount.toFixed(4)}</td>
+                                <td>$${h.avgPrice.toFixed(4)}</td>
+                                <td style="${pnlUsdtClass}">$${pnlUsdt.toFixed(2)}</td>
+                                <td style="${pnlPkrClass}">Rs ${pnlPkr.toFixed(2)}</td>
+                            </tr>`;
+                            holdingsTableBody.innerHTML += row;
+                        });
+                    } else {
+                        holdingsTableBody.innerHTML = `<tr><td colspan="5">No holdings found</td></tr>`;
+                    }
                 }
             } catch(e) { console.error('Portfolio fetch error', e); }
         }
@@ -244,4 +268,4 @@
         });
     </script>
 </body>
-</html>
+    </html>
