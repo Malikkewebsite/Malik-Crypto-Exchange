@@ -120,6 +120,11 @@ function executeBitgetRealOrder(symbol, side, amount) {
     });
 }
 
+// Homepage Route (Fixes Cannot GET / error)
+app.get('/', (req, res) => {
+    res.send('Malik Crypto Exchange Server is Running Successfully! ✅');
+});
+
 // Trade Execute Endpoint
 app.post('/api/trade/execute', async (req, res) => {
     try {
